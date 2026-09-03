@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "nombre": "Bardo Studio — Mapa de Atributos Dinámicos",
+  "descripcion": "Edita este archivo para ajustar umbrales y parámetros SIN tocar el código. El frontend lo consulta en /api/config al arrancar. Las fases futuras (tensión, moods de música, ducking) añadirán sus propias secciones aquí.",
+  "silencio": {
+    "umbralDb": -38,
+    "duracionMinimaSeg": 2,
+    "fusionHuecosSeg": 0.25
+  },
+  "analisis": {
+    "picosPorSegundo": 50,
+    "ventanaEnvolventeSeg": 0.1,
+    "bloqueLargoSeg": 300,
+    "bloqueCortoSeg": 60
+  }
+}
