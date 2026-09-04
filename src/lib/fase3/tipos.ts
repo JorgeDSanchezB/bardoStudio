@@ -20,6 +20,8 @@ export interface Pista {
   archivo: string;
   instrumentacion: string;
   descripcion: string;
+  /** true = importada por el usuario (fase 3); ausente = biblioteca CC0 */
+  propia?: boolean;
 }
 
 /** Catálogo tal cual se sirve desde /api/music-library. */
@@ -79,12 +81,13 @@ export function normalizarPista(bruto: Record<string, unknown>): Pista | null {
     tensionMax: num(bruto.tensionMax, 100, 0, 100),
     bpm: num(bruto.bpm, 90, 20, 300),
     tonalidad: typeof bruto.tonalidad === "string" ? bruto.tonalidad : "—",
-    durSec: num(bruto.durSec, 60, 5, 600),
+    durSec: num(bruto.durSec, 60, 5, 3600),
     archivo,
     instrumentacion:
       typeof bruto.instrumentacion === "string" ? bruto.instrumentacion : "—",
     descripcion:
       typeof bruto.descripcion === "string" ? bruto.descripcion : "",
+    propia: bruto.propia === true ? true : undefined,
   };
 }
 

@@ -61,3 +61,17 @@ export function formatRulerTick(t: number, stepSec: number): string {
 export function clamp(v: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, v));
 }
+
+/** «hace 5 min», «hace 3 h», «hace 2 días» o fecha corta. */
+export function formatHace(ts: number): string {
+  const diff = Date.now() - ts;
+  if (!Number.isFinite(diff) || diff < 0) return "—";
+  const min = Math.floor(diff / 60000);
+  if (min < 1) return "hace instantes";
+  if (min < 60) return `hace ${min} min`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `hace ${h} h`;
+  const d = Math.floor(h / 24);
+  if (d < 31) return `hace ${d} día${d > 1 ? "s" : ""}`;
+  return new Date(ts).toLocaleDateString("es");
+}

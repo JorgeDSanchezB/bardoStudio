@@ -35,7 +35,9 @@ import {
   type Mezcla,
 } from "@/lib/fase4/tipos";
 import type { ExportInfo } from "@/lib/fase6/informe";
+import type { ProyectoGuardado } from "@/lib/proyecto/tipos";
 import { saveAnalysis } from "@/lib/idb";
+import { esAnimo } from "@/lib/fase2/types";
 
 export type Phase1Status = "empty" | "analyzing" | "review" | "approved" | "error";
 export type Fase2Status = "idle" | "running" | "review" | "approved" | "error";
@@ -193,6 +195,13 @@ export interface Thresholds {
 
 interface ProjectState {
   // ---- persistido ----
+  /** proyecto guardado en el servidor local (.bsproj/db/proyectos) */
+  proyecto: {
+    id: string;
+    nombre: string;
+    creadoEn: number;
+    guardadoEn: number;
+  } | null;
   fileMeta: FileMeta | null;
   sourceKind: "demo" | "user" | null;
   status: Phase1Status;
@@ -246,6 +255,16 @@ interface ProjectActions {
   resetAll: () => void;
   restoreAnalysis: (a: AnalysisData) => void;
   setSourceMissing: (v: boolean) => void;
+  // ---- proyecto guardado (estilo Camtasia) ----
+  /** aplica un proyecto guardado (.bsproj o del servidor) sobre el estado */
+  aplicarProyecto: (p: ProyectoGuardado) => boolean;
+  /** marca el proyecto actual como guardado (id/nombre/fechas) */
+  marcarProyectoGuardado: (meta: {
+    id: string;
+    nombre: string;
+    creadoEn: number;
+    guardadoEn: number;
+  }) => void;
   // ---- Fase 2 ----
   iniciarFase2: () => void;
   setProgresoFase2: (p: Fase2Progreso) => void;
@@ -306,6 +325,7 @@ const grow = (arr: Float32Array, len: number, fill: number): Float32Array => {
 const emptyStats = { totalSilenceSec: 0, speechRatio: 1 };
 
 const initial: ProjectState = {
+  proyecto: null,
   fileMeta: null,
   sourceKind: null,
   status: "empty",
@@ -436,6 +456,502 @@ function normalizarConfigFase2(bruto: unknown): Fase2Config {
       pesosTexto: num(c.emocion?.pesosTexto, d.emocion.pesosTexto, 0, 1),
       pesosAudio: num(c.emocion?.pesosAudio, d.emocion.pesosAudio, 0, 1),
     },
+  };
+}
+
+// ---------------- Validación profunda de proyectos guardados ----------------
+// Un .bsproj (o la copia del servidor) puede venir editado a mano o de otra
+// versión: se normaliza campo a campo y se descarta lo inválido sin lanzar.
+
+const numO = (
+  v: unknown,
+  def: number,
+  min = -Infinity,
+  max = Infinity
+): number => {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : def;
+};
+
+const strO = (v: unknown, def: string, max = 400): string =>
+  typeof v === "string" ? v.slice(0, max) : def;
+
+const boolO = (v: unknown, def = false): boolean =>
+  typeof v === "boolean" ? v : def;
+
+function filaObjeto(v: unknown): Record<string, unknown> | null {
+  return v && typeof v === "object" && !Array.isArray(v)
+    ? (v as Record<string, unknown>)
+    : null;
+}
+
+function validarSegmento(v: unknown): Segmento | null {
+  const f = filaObjeto(v);
+  if (!f || typeof f.id !== "string") return null;
+  const inicio = Number(f.inicio);
+  const fin = Number(f.fin);
+  if (!Number.isFinite(inicio) || !Number.isFinite(fin) || fin <= inicio) {
+    return null;
+  }
+  return {
+    id: f.id,
+    bloque: Math.trunc(numO(f.bloque, 0, 0, 1_000_000)),
+    inicio,
+    fin,
+    texto: strO(f.texto, ""),
+  };
+}
+
+function validarEscena(v: unknown): Escena | null {
+  const f = filaObjeto(v);
+  if (!f || typeof f.id !== "string") return null;
+  const inicio = Number(f.inicio);
+  const fin = Number(f.fin);
+  if (!Number.isFinite(inicio) || !Number.isFinite(fin) || fin <= inicio) {
+    return null;
+  }
+  return {
+    id: f.id,
+    n: Math.trunc(numO(f.n, 1, 1, 100_000)),
+    inicio,
+    fin,
+    texto: strO(f.texto, ""),
+    energia: Math.trunc(numO(f.energia, 50, 0, 100)),
+    tensionAuto: Math.trunc(numO(f.tensionAuto, 50, 0, 100)),
+    tension: Math.trunc(numO(f.tension, 50, 0, 100)),
+    corregido: boolO(f.corregido),
+    animo: esAnimo(f.animo) ? f.animo : "neutro",
+    fuente:
+      f.fuente === "llm" || f.fuente === "heuristico" || f.fuente === "energia"
+        ? f.fuente
+        : "heuristico",
+    razon: typeof f.razon === "string" ? f.razon.slice(0, 400) : undefined,
+  };
+}
+
+function validarSilencio(v: unknown): SilenceRegion | null {
+  const f = filaObjeto(v);
+  if (!f) return null;
+  const start = Number(f.start);
+  const end = Number(f.end);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+    return null;
+  }
+  return {
+    id: strO(f.id, `sil-${start}-${end}`, 60),
+    start,
+    end,
+  };
+}
+
+function validarAsignacion(v: unknown): Asignacion | null {
+  const f = filaObjeto(v);
+  if (
+    !f ||
+    typeof f.escenaId !== "string" ||
+    typeof f.pistaId !== "string"
+  ) {
+    return null;
+  }
+  return {
+    escenaId: f.escenaId,
+    pistaId: f.pistaId,
+    match: Math.trunc(numO(f.match, 0, 0, 100)),
+    origen: f.origen === "manual" ? "manual" : "auto",
+  };
+}
+
+function validarBloque(v: unknown): BloqueMusica | null {
+  const f = filaObjeto(v);
+  if (
+    !f ||
+    typeof f.id !== "string" ||
+    typeof f.pistaId !== "string"
+  ) {
+    return null;
+  }
+  const inicio = Number(f.inicio);
+  const fin = Number(f.fin);
+  if (!Number.isFinite(inicio) || !Number.isFinite(fin) || fin <= inicio) {
+    return null;
+  }
+  return {
+    id: f.id,
+    pistaId: f.pistaId,
+    inicio,
+    fin,
+    fadeInSeg: numO(f.fadeInSeg, 0, 0, 30),
+    fadeOutSeg: numO(f.fadeOutSeg, 0, 0, 30),
+    muted: boolO(f.muted),
+    origen: f.origen === "edicion" ? "edicion" : "auto",
+  };
+}
+
+function validarExport(v: unknown): ExportInfo | null {
+  const f = filaObjeto(v);
+  if (!f) return null;
+  const tipo =
+    f.tipo === "mezcla" || f.tipo === "voz" || f.tipo === "musica"
+      ? f.tipo
+      : null;
+  if (!tipo || typeof f.nombre !== "string") return null;
+  return {
+    tipo,
+    nombre: f.nombre.slice(0, 200),
+    bytes: numO(f.bytes, 0, 0, 2 ** 40),
+    durSec: numO(f.durSec, 0, 0, 24 * 3600),
+    rmsDb: numO(f.rmsDb, -60, -120, 0),
+    picoDb: numO(f.picoDb, -3, -120, 6),
+    creadoEn: numO(f.creadoEn, 0, 0, 4102444800000),
+  };
+}
+
+function validarResumenFase2(v: unknown): Fase2Resumen | null {
+  const f = filaObjeto(v);
+  if (!f) return null;
+  const r: Fase2Resumen = {
+    motorTranscripcion: strO(f.motorTranscripcion, "—", 80),
+    motorEmocion: strO(f.motorEmocion, "—", 80),
+    duracionSec: numO(f.duracionSec, 0, 0, 24 * 3600),
+    bloques: Math.trunc(numO(f.bloques, 0, 0, 100_000)),
+    solicitudesAsr: Math.trunc(numO(f.solicitudesAsr, 0, 0, 1_000_000)),
+    segmentos: Math.trunc(numO(f.segmentos, 0, 0, 1_000_000)),
+    escenas: Math.trunc(numO(f.escenas, 0, 0, 100_000)),
+    caracteres: Math.trunc(numO(f.caracteres, 0, 0, 100_000_000)),
+  };
+  return r;
+}
+
+function validarResumenFase3(v: unknown): Fase3Resumen | null {
+  const f = filaObjeto(v);
+  if (!f) return null;
+  return {
+    pistasUsadas: Math.trunc(numO(f.pistasUsadas, 0, 0, 1000)),
+    cambios: Math.trunc(numO(f.cambios, 0, 0, 100_000)),
+    auto: Math.trunc(numO(f.auto, 0, 0, 100_000)),
+    manual: Math.trunc(numO(f.manual, 0, 0, 100_000)),
+    tiempoMusicaSec: numO(f.tiempoMusicaSec, 0, 0, 24 * 3600),
+  };
+}
+
+function validarSavedResult(v: unknown): AnalyzeResult | null {
+  const f = filaObjeto(v);
+  if (!f) return null;
+  const sampleRate = numO(f.sampleRate, 0, 8000, 192000);
+  const durationSec = numO(f.durationSec, 0, 0, 24 * 3600);
+  if (sampleRate < 8000 || durationSec <= 0) return null;
+  return {
+    sampleRate: Math.trunc(sampleRate),
+    channels: Math.trunc(numO(f.channels, 1, 1, 8)),
+    format: f.format === "decoded" ? "decoded" : "wav",
+    totalSamples: Math.trunc(numO(f.totalSamples, 0, 0, 2 ** 40)),
+    durationSec,
+    totalChunks: Math.trunc(numO(f.totalChunks, 1, 1, 1_000_000)),
+    skippedChunks: Math.trunc(numO(f.skippedChunks, 0, 0, 1_000_000)),
+    chunkSeconds: numO(f.chunkSeconds, 60, 1, 600),
+  };
+}
+
+/** Estado persistido ya validado (forma exacta de partialize). */
+interface EstadoValidado {
+  proyecto: ProjectState["proyecto"];
+  fileMeta: FileMeta | null;
+  sourceKind: "demo" | "user" | null;
+  status: Phase1Status;
+  silences: SilenceRegion[];
+  silenceStats: { totalSilenceSec: number; speechRatio: number };
+  thresholds: Thresholds;
+  thresholdsTouched: boolean;
+  configDefaults: Thresholds | null;
+  gridInfo: { peaksPerSec: number; envelopeHopSec: number } | null;
+  analysisOpts: AnalysisOptions;
+  savedResult: AnalyzeResult | null;
+  analyzedAt: number | null;
+  approvedAt: number | null;
+  fase2: Fase2Estado;
+  fase3: Fase3Estado;
+  fase4: Fase4Estado;
+  fase5: Fase5Estado;
+  fase6: Fase6Estado;
+  configFase3: Fase3Config | null;
+}
+
+/** Valida el «estado» de un ProyectoGuardado; null si es irrecuperable. */
+function validarEstadoProyecto(bruto: unknown): EstadoValidado | null {
+  const f = filaObjeto(bruto);
+  if (!f) return null;
+
+  // ---- Fase 1 ----
+  const fm = filaObjeto(f.fileMeta);
+  const fileMeta: FileMeta | null =
+    fm && typeof fm.name === "string" && Number(fm.size) > 0 && typeof fm.key === "string"
+      ? {
+          name: fm.name.slice(0, 200),
+          size: numO(fm.size, 0, 0, 2 ** 40),
+          type: strO(fm.type, "audio/*", 60),
+          lastModified: numO(fm.lastModified, 0, 0, 4102444800000),
+          key: fm.key.slice(0, 200),
+        }
+      : null;
+  if (!fileMeta) return null;
+
+  const sourceKind =
+    f.sourceKind === "demo" || f.sourceKind === "user" ? f.sourceKind : null;
+  const savedResult = validarSavedResult(f.savedResult);
+  let status: Phase1Status;
+  if (f.status === "approved") status = "approved";
+  else if (f.status === "error") status = "error";
+  else if (f.status === "analyzing" || f.status === "review") status = "review";
+  else status = savedResult ? "review" : "empty";
+  if (status === "review" && !savedResult) status = "empty";
+
+  const silences = (Array.isArray(f.silences) ? f.silences : [])
+    .map(validarSilencio)
+    .filter((s): s is SilenceRegion => s !== null)
+    .slice(0, 20_000);
+  const ss = filaObjeto(f.silenceStats);
+  const silenceStats = {
+    totalSilenceSec: numO(ss?.totalSilenceSec, 0, 0, 24 * 3600),
+    speechRatio: numO(ss?.speechRatio, 1, 0, 1),
+  };
+  const th = filaObjeto(f.thresholds);
+  const thresholds: Thresholds = {
+    dbThreshold: numO(th?.dbThreshold, -38, -80, 0),
+    minDurationSec: numO(th?.minDurationSec, 2, 0.05, 60),
+    mergeGapSec: numO(th?.mergeGapSec, 0.25, 0, 10),
+  };
+  const cd = filaObjeto(f.configDefaults);
+  const configDefaults: Thresholds | null = cd
+    ? {
+        dbThreshold: numO(cd.dbThreshold, -38, -80, 0),
+        minDurationSec: numO(cd.minDurationSec, 2, 0.05, 60),
+        mergeGapSec: numO(cd.mergeGapSec, 0.25, 0, 10),
+      }
+    : null;
+  const gi = filaObjeto(f.gridInfo);
+  const gridInfo = gi
+    ? {
+        peaksPerSec: Math.trunc(numO(gi.peaksPerSec, 50, 5, 200)),
+        envelopeHopSec: numO(gi.envelopeHopSec, 0.1, 0.02, 1),
+      }
+    : null;
+  const ao = filaObjeto(f.analysisOpts);
+  const d = DEFAULT_ANALYSIS_OPTIONS;
+  const analysisOpts: AnalysisOptions = {
+    peaksPerSec: Math.trunc(numO(ao?.peaksPerSec, d.peaksPerSec, 5, 200)),
+    envelopeHopSec: numO(ao?.envelopeHopSec, d.envelopeHopSec, 0.02, 1),
+    chunkSecondsLong: numO(ao?.chunkSecondsLong, d.chunkSecondsLong, 30, 600),
+    chunkSecondsShort: numO(ao?.chunkSecondsShort, d.chunkSecondsShort, 5, 120),
+  };
+
+  // ---- Fase 2 ----
+  const f2 = filaObjeto(f.fase2) ?? {};
+  const segmentos = (Array.isArray(f2.segmentos) ? f2.segmentos : [])
+    .map(validarSegmento)
+    .filter((s): s is Segmento => s !== null)
+    .slice(0, 100_000);
+  const escenas = (Array.isArray(f2.escenas) ? f2.escenas : [])
+    .map(validarEscena)
+    .filter((e): e is Escena => e !== null)
+    .slice(0, 10_000);
+  const bloquesHechos = (Array.isArray(f2.bloquesHechos) ? f2.bloquesHechos : [])
+    .map((n) => Math.trunc(numO(n, -1, -1, 100_000)))
+    .filter((n) => n >= 0);
+  const avisos: Fase2Aviso[] = (Array.isArray(f2.avisos) ? f2.avisos : [])
+    .map(filaObjeto)
+    .filter((a): a is Record<string, unknown> => a !== null && typeof a.texto === "string")
+    .map((a): Fase2Aviso => ({
+      nivel:
+        a.nivel === "info" || a.nivel === "aviso" || a.nivel === "error"
+          ? a.nivel
+          : "info",
+      texto: String(a.texto).slice(0, 400),
+    }))
+    .slice(0, 50);
+  const status2: Fase2Status =
+    f2.status === "approved" && escenas.length > 0
+      ? "approved"
+      : f2.status === "error"
+        ? "error"
+        : escenas.length > 0
+          ? "review"
+          : "idle";
+  const fase2: Fase2Estado = {
+    status: status2,
+    segmentos,
+    escenas,
+    bloquesHechos,
+    resumen: validarResumenFase2(f2.resumen),
+    avisos,
+    error: typeof f2.error === "string" ? f2.error.slice(0, 400) : null,
+    configFase2: normalizarConfigFase2(f2.configFase2),
+    aprobadaEn:
+      status2 === "approved" ? numO(f2.aprobadaEn, 0, 0, 4102444800000) : null,
+    progreso: null,
+  };
+
+  // ---- Fase 3 ----
+  const f3 = filaObjeto(f.fase3) ?? {};
+  const asignaciones = (Array.isArray(f3.asignaciones) ? f3.asignaciones : [])
+    .map(validarAsignacion)
+    .filter((a): a is Asignacion => a !== null)
+    .slice(0, 10_000);
+  const status3: FaseSimpleStatus =
+    f3.status === "approved" && asignaciones.length > 0
+      ? "approved"
+      : f3.status === "error"
+        ? "error"
+        : asignaciones.length > 0
+          ? "review"
+          : "idle";
+  const fase3: Fase3Estado = {
+    status: status3,
+    catalogo: null,
+    asignaciones: status3 === "idle" ? null : asignaciones,
+    resumen: validarResumenFase3(f3.resumen),
+    error: typeof f3.error === "string" ? f3.error.slice(0, 400) : null,
+    aprobadaEn:
+      status3 === "approved" ? numO(f3.aprobadaEn, 0, 0, 4102444800000) : null,
+  };
+
+  // ---- Fase 4 ----
+  const f4 = filaObjeto(f.fase4) ?? {};
+  const status4: FaseSimpleStatus =
+    f4.status === "approved"
+      ? "approved"
+      : f4.status === "error"
+        ? "error"
+        : f4.status === "review"
+          ? "review"
+          : "idle";
+  const fase4: Fase4Estado = {
+    status: status4,
+    params: normalizarParamsFase4(f4.params),
+    configDefaults: filaObjeto(f4.configDefaults)
+      ? normalizarParamsFase4(f4.configDefaults)
+      : null,
+    paramsTouched: boolO(f4.paramsTouched),
+    aprobadaEn:
+      status4 === "approved" ? numO(f4.aprobadaEn, 0, 0, 4102444800000) : null,
+    mezcla: null,
+  };
+
+  // ---- Fase 5 ----
+  const f5 = filaObjeto(f.fase5) ?? {};
+  const bloques = (Array.isArray(f5.bloques) ? f5.bloques : [])
+    .map(validarBloque)
+    .filter((b): b is BloqueMusica => b !== null)
+    .slice(0, 5000);
+  const status5: FaseSimpleStatus =
+    f5.status === "approved"
+      ? "approved"
+      : f5.status === "error"
+        ? "error"
+        : bloques.length > 0
+          ? "review"
+          : "idle";
+  const fase5: Fase5Estado = {
+    status: status5,
+    bloques: status5 === "idle" ? null : bloques,
+    params: filaObjeto(f5.params) ? normalizarParamsFase4(f5.params) : null,
+    ediciones: Math.trunc(numO(f5.ediciones, 0, 0, 100_000)),
+    detalleEdiciones: (
+      Array.isArray(f5.detalleEdiciones) ? f5.detalleEdiciones : []
+    )
+      .filter((s): s is string => typeof s === "string")
+      .map((s) => s.slice(0, 200))
+      .slice(0, 8),
+    aprobadaEn:
+      status5 === "approved" ? numO(f5.aprobadaEn, 0, 0, 4102444800000) : null,
+  };
+
+  // ---- Fase 6 ----
+  const f6 = filaObjeto(f.fase6) ?? {};
+  const exportaciones = (Array.isArray(f6.exportaciones) ? f6.exportaciones : [])
+    .map(validarExport)
+    .filter((e): e is ExportInfo => e !== null)
+    .slice(0, 12);
+  const status6: FaseSimpleStatus =
+    f6.status === "approved"
+      ? "approved"
+      : f6.status === "error"
+        ? "error"
+        : f6.status === "review"
+          ? "review"
+          : "idle";
+  const informePdf = filaObjeto(f6.informePdf);
+  const fase6: Fase6Estado = {
+    status: status6,
+    params: normalizarParamsFase6(f6.params),
+    configDefaults: filaObjeto(f6.configDefaults)
+      ? normalizarParamsFase6(f6.configDefaults)
+      : null,
+    paramsTouched: boolO(f6.paramsTouched),
+    exportaciones,
+    informePdf: informePdf
+      ? {
+          bytes: Math.trunc(numO(informePdf.bytes, 0, 0, 2 ** 30)),
+          creadoEn: numO(informePdf.creadoEn, 0, 0, 4102444800000),
+        }
+      : null,
+    error: typeof f6.error === "string" ? f6.error.slice(0, 400) : null,
+    aprobadaEn:
+      status6 === "approved" ? numO(f6.aprobadaEn, 0, 0, 4102444800000) : null,
+  };
+
+  return {
+    proyecto: null,
+    fileMeta,
+    sourceKind: sourceKind ?? "user",
+    status,
+    silences,
+    silenceStats,
+    thresholds,
+    thresholdsTouched: boolO(f.thresholdsTouched),
+    configDefaults,
+    gridInfo,
+    analysisOpts,
+    savedResult,
+    analyzedAt: numO(f.analyzedAt, 0, 0, 4102444800000) || null,
+    approvedAt:
+      status === "approved" ? numO(f.approvedAt, 0, 0, 4102444800000) : null,
+    fase2,
+    fase3,
+    fase4,
+    fase5,
+    fase6,
+    configFase3: filaObjeto(f.configFase3)
+      ? normalizarConfigFase3(f.configFase3)
+      : null,
+  };
+}
+
+/** Snapshot persistido del proyecto actual (para guardar/exportar .bsproj). */
+export function snapshotProyecto(): ReturnType<typeof estadoPersistido> {
+  return estadoPersistido(useProjectStore.getState());
+}
+function estadoPersistido(s: ProjectState): EstadoValidado & { proyecto: ProjectState["proyecto"] } {
+  return {
+    proyecto: s.proyecto,
+    fileMeta: s.fileMeta,
+    sourceKind: s.sourceKind,
+    status: s.status === "analyzing" ? "review" : s.status,
+    silences: s.silences,
+    silenceStats: s.silenceStats,
+    thresholds: s.thresholds,
+    thresholdsTouched: s.thresholdsTouched,
+    configDefaults: s.configDefaults,
+    gridInfo: s.gridInfo,
+    analysisOpts: s.analysisOpts,
+    savedResult: s.savedResult,
+    analyzedAt: s.analyzedAt,
+    approvedAt: s.approvedAt,
+    fase2: { ...s.fase2, progreso: null },
+    fase3: { ...s.fase3, catalogo: null },
+    fase4: { ...s.fase4, mezcla: null },
+    fase5: s.fase5,
+    fase6: s.fase6,
+    configFase3: s.configFase3,
   };
 }
 
@@ -632,6 +1148,31 @@ export const useProjectStore = create<ProjectStore>()(
       restoreAnalysis: (a) => set({ analysis: a, progress: null }),
 
       setSourceMissing: (v) => set({ sourceMissing: v }),
+
+      // ---------- proyecto guardado (estilo Camtasia) ----------
+
+      aplicarProyecto: (p) => {
+        const validado = validarEstadoProyecto(p.estado);
+        if (!validado) return false;
+        set({
+          ...validado,
+          proyecto: {
+            id: p.meta.id,
+            nombre: p.meta.nombre,
+            creadoEn: p.meta.creadoEn,
+            guardadoEn: p.meta.guardadoEn,
+          },
+          // volátiles a cero: la página restaura análisis y audio fuente
+          progress: null,
+          analysis: null,
+          playheadSec: 0,
+          error: null,
+          sourceMissing: false,
+        });
+        return true;
+      },
+
+      marcarProyectoGuardado: (meta) => set({ proyecto: meta }),
 
       // ---------- acciones de Fase 2 ----------
       iniciarFase2: () =>
@@ -967,27 +1508,7 @@ export const useProjectStore = create<ProjectStore>()(
     {
       name: "bardo-project-v1",
       storage: createJSONStorage(() => localStorage),
-      partialize: (s) => ({
-        fileMeta: s.fileMeta,
-        sourceKind: s.sourceKind,
-        status: s.status === "analyzing" ? "review" : s.status,
-        silences: s.silences,
-        silenceStats: s.silenceStats,
-        thresholds: s.thresholds,
-        thresholdsTouched: s.thresholdsTouched,
-        configDefaults: s.configDefaults,
-        gridInfo: s.gridInfo,
-        analysisOpts: s.analysisOpts,
-        savedResult: s.savedResult,
-        analyzedAt: s.analyzedAt,
-        approvedAt: s.approvedAt,
-        fase2: { ...s.fase2, progreso: null },
-        fase3: { ...s.fase3, catalogo: null },
-        fase4: { ...s.fase4, mezcla: null },
-        fase5: s.fase5,
-        fase6: s.fase6,
-        configFase3: s.configFase3,
-      }),
+      partialize: (s) => estadoPersistido(s),
     }
   )
 );

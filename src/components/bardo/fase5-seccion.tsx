@@ -64,6 +64,8 @@ export function Fase5Seccion(props: Fase5SeccionProps) {
   const buffersRef = useRef<{
     bufferVoz: AudioBuffer;
     buffersPistas: Map<string, AudioBuffer>;
+    /** URL con la que se decodificaron (para invalidar al cambiar de fuente) */
+    urlVoz: string;
   } | null>(null);
   const [reproduciendo, setReproduciendo] = useState(false);
   const [posicion, setPosicion] = useState(0);
@@ -77,15 +79,18 @@ export function Fase5Seccion(props: Fase5SeccionProps) {
   const envListo = !!analysis && analysis.envDb.length > 0;
   const listo = bloques !== null && envListo;
 
-  // ---------- materializar bloques desde la mezcla aprobada ----------
+  // ---------- materializar bloques desde la mezcla APROBADA ----------
+  // (solo al aprobar la Fase 4: si se materializara antes, los ajustes
+  // manuales de pistas hechos en la Fase 3 quedarían fuera del editor)
   const mezclaStore = useProjectStore((s) => s.fase4.mezcla);
   useEffect(() => {
     if (bloques || !envListo) return;
+    if (fase4.status !== "approved") return;
     if (!mezclaStore || mezclaStore.bloques.length === 0) return;
     useProjectStore
       .getState()
       .materializarFase5(mezclaStore.bloques, fase4.params);
-  }, [bloques, envListo, mezclaStore, fase4.params]);
+  }, [bloques, envListo, mezclaStore, fase4.params, fase4.status]);
 
   // ---------- envolventes vigentes (recalculadas tras cada edición) ----------
   const mezclaActual = useMemo(() => {
@@ -119,10 +124,16 @@ export function Fase5Seccion(props: Fase5SeccionProps) {
   useEffect(() => {
     if (!bloques || !mezclaActual || !sourceUrl) return;
     if (motorRef.current) {
-      if (buffersRef.current) {
+      const bufs = buffersRef.current;
+      // ¿los buffers actuales cubren todos los bloques vivos y la fuente?
+      const cubreTodo =
+        !!bufs &&
+        bufs.urlVoz === sourceUrl &&
+        bloques.every((b) => b.muted || bufs.buffersPistas.get(b.pistaId));
+      if (cubreTodo) {
         motorRef.current.reconfigurar({
-          bufferVoz: buffersRef.current.bufferVoz,
-          buffersPistas: buffersRef.current.buffersPistas,
+          bufferVoz: bufs!.bufferVoz,
+          buffersPistas: bufs!.buffersPistas,
           bloques,
           nivelDb: mezclaActual.nivelDb,
           duckDb: mezclaActual.duckDb,
@@ -131,11 +142,44 @@ export function Fase5Seccion(props: Fase5SeccionProps) {
             ? analysis?.durationSec ?? duracion
             : duracion,
         });
+        return;
       }
+      // falta alguna pista (p. ej. tras cambiar de asignación o de proyecto):
+      // descartar el motor para que el próximo «reproducir» re-decodifique
+      motorRef.current.dispose();
+      motorRef.current = null;
+      buffersRef.current = null;
+      setReproduciendo(false);
+      setPosicion(0);
       return;
     }
     // primer arranque diferido: se crea al pulsar reproducir
   }, [bloques, mezclaActual, sourceUrl, analysis, duracion]);
+
+  // ---------- cambio de fuente (proyecto reabierto): invalidar el motor ----------
+  const urlVistaRef = useRef<string | null>(null);
+  useEffect(() => {
+    const vista = urlVistaRef.current;
+    if (vista !== null && vista !== sourceUrl) {
+      motorRef.current?.dispose();
+      motorRef.current = null;
+      buffersRef.current = null;
+      setReproduciendo(false);
+      setPosicion(0);
+      useProjectStore.getState().setPlayhead(0);
+    }
+    if (sourceUrl) urlVistaRef.current = sourceUrl;
+  }, [sourceUrl]);
+
+  // ---------- desmonte: cerrar el contexto del motor ----------
+  useEffect(
+    () => () => {
+      motorRef.current?.dispose();
+      motorRef.current = null;
+      buffersRef.current = null;
+    },
+    []
+  );
 
   const crearMotor = useCallback(async (): Promise<boolean> => {
     if (motorRef.current) return true;
@@ -153,7 +197,7 @@ export function Fase5Seccion(props: Fase5SeccionProps) {
         sourceUrl,
         urls
       );
-      buffersRef.current = { bufferVoz, buffersPistas };
+      buffersRef.current = { bufferVoz, buffersPistas, urlVoz: sourceUrl };
       const cfg: MotorConfig = {
         bufferVoz,
         buffersPistas,

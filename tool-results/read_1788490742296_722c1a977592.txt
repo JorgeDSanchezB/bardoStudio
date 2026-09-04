@@ -1,0 +1,994 @@
+     1→"use client";
+     2→
+     3→import { create } from "zustand";
+     4→import { createJSONStorage, persist } from "zustand/middleware";
+     5→import { makeGrid, type ChunkStats } from "@/lib/audio/peaks";
+     6→import { detectSilences, type SilenceRegion, type SilenceStats } from "@/lib/audio/silence";
+     7→import {
+     8→  DEFAULT_ANALYSIS_OPTIONS,
+     9→  type AnalysisOptions,
+    10→  type AnalyzeResult,
+    11→  type AudioMeta,
+    12→  type ProgressInfo,
+    13→} from "@/lib/audio/types";
+    14→import {
+    15→  FASE2_CONFIG_DEFECTO,
+    16→  type Escena,
+    17→  type Fase2Aviso,
+    18→  type Fase2Config,
+    19→  type Fase2Progreso,
+    20→  type Fase2Resumen,
+    21→  type Segmento,
+    22→} from "@/lib/fase2/types";
+    23→import {
+    24→  FASE3_CONFIG_DEFECTO,
+    25→  type Asignacion,
+    26→  type Fase3Config,
+    27→  type Fase3Resumen,
+    28→  type Pista,
+    29→} from "@/lib/fase3/tipos";
+    30→import { asignarPistas, matchDePista, resumirAsignaciones } from "@/lib/fase3/asignar";
+    31→import {
+    32→  FASE4_PARAMS_DEFECTO,
+    33→  type BloqueMusica,
+    34→  type Fase4Params,
+    35→  type Mezcla,
+    36→} from "@/lib/fase4/tipos";
+    37→import type { ExportInfo } from "@/lib/fase6/informe";
+    38→import { saveAnalysis } from "@/lib/idb";
+    39→
+    40→export type Phase1Status = "empty" | "analyzing" | "review" | "approved" | "error";
+    41→export type Fase2Status = "idle" | "running" | "review" | "approved" | "error";
+    42→export type FaseSimpleStatus = "idle" | "review" | "approved" | "error";
+    43→
+    44→export interface Fase2Estado {
+    45→  status: Fase2Status;
+    46→  segmentos: Segmento[];
+    47→  escenas: Escena[];
+    48→  bloquesHechos: number[];
+    49→  resumen: Fase2Resumen | null;
+    50→  avisos: Fase2Aviso[];
+    51→  error: string | null;
+    52→  /** sembrada desde /api/config (sección fase2 de config.json) */
+    53→  configFase2: Fase2Config | null;
+    54→  /** epoch ms de la aprobación (para el informe PDF) */
+    55→  aprobadaEn: number | null;
+    56→  /** volátil: solo durante la ejecución */
+    57→  progreso: Fase2Progreso | null;
+    58→}
+    59→
+    60→const fase2Inicial: Fase2Estado = {
+    61→  status: "idle",
+    62→  segmentos: [],
+    63→  escenas: [],
+    64→  bloquesHechos: [],
+    65→  resumen: null,
+    66→  avisos: [],
+    67→  error: null,
+    68→  configFase2: null,
+    69→  aprobadaEn: null,
+    70→  progreso: null,
+    71→};
+    72→
+    73→// ---------------- Fase 3: biblioteca musical + asignación ----------------
+    74→
+    75→export interface Fase3Estado {
+    76→  status: FaseSimpleStatus;
+    77→  /** volátil: se re-pide a /api/music-library en cada carga */
+    78→  catalogo: Pista[] | null;
+    79→  asignaciones: Asignacion[] | null;
+    80→  resumen: Fase3Resumen | null;
+    81→  error: string | null;
+    82→  aprobadaEn: number | null;
+    83→}
+    84→
+    85→const fase3Inicial: Fase3Estado = {
+    86→  status: "idle",
+    87→  catalogo: null,
+    88→  asignaciones: null,
+    89→  resumen: null,
+    90→  error: null,
+    91→  aprobadaEn: null,
+    92→};
+    93→
+    94→// ---------------- Fase 4: mezcla automática ----------------
+    95→
+    96→export interface Fase4Estado {
+    97→  status: FaseSimpleStatus;
+    98→  params: Fase4Params;
+    99→  configDefaults: Fase4Params | null;
+   100→  paramsTouched: boolean;
+   101→  aprobadaEn: number | null;
+   102→  /** volátil: no se persiste (se recalcula al abrir la fase) */
+   103→  mezcla: Mezcla | null;
+   104→}
+   105→
+   106→const fase4Inicial: Fase4Estado = {
+   107→  status: "idle",
+   108→  params: FASE4_PARAMS_DEFECTO,
+   109→  configDefaults: null,
+   110→  paramsTouched: false,
+   111→  aprobadaEn: null,
+   112→  mezcla: null,
+   113→};
+   114→
+   115→// ---------------- Fase 5: editor de mezcla ----------------
+   116→
+   117→export interface Fase5Estado {
+   118→  status: FaseSimpleStatus;
+   119→  /** bloques editables (materializados desde la mezcla aprobada) */
+   120→  bloques: BloqueMusica[] | null;
+   121→  /** copia de los parámetros con los que se materializó */
+   122→  params: Fase4Params | null;
+   123→  ediciones: number;
+   124→  detalleEdiciones: string[];
+   125→  aprobadaEn: number | null;
+   126→}
+   127→
+   128→const fase5Inicial: Fase5Estado = {
+   129→  status: "idle",
+   130→  bloques: null,
+   131→  params: null,
+   132→  ediciones: 0,
+   133→  detalleEdiciones: [],
+   134→  aprobadaEn: null,
+   135→};
+   136→
+   137→// ---------------- Fase 6: exportación y reporte ----------------
+   138→
+   139→export interface Fase6Params {
+   140→  normalizar: boolean;
+   141→  incluirStems: boolean;
+   142→  colaFinalSeg: number;
+   143→}
+   144→
+   145→export interface Fase6Estado {
+   146→  status: FaseSimpleStatus;
+   147→  params: Fase6Params;
+   148→  configDefaults: Fase6Params | null;
+   149→  paramsTouched: boolean;
+   150→  exportaciones: ExportInfo[];
+   151→  informePdf: { bytes: number; creadoEn: number } | null;
+   152→  error: string | null;
+   153→  aprobadaEn: number | null;
+   154→}
+   155→
+   156→const fase6Inicial: Fase6Estado = {
+   157→  status: "idle",
+   158→  params: { normalizar: true, incluirStems: true, colaFinalSeg: 3 },
+   159→  configDefaults: null,
+   160→  paramsTouched: false,
+   161→  exportaciones: [],
+   162→  informePdf: null,
+   163→  error: null,
+   164→  aprobadaEn: null,
+   165→};
+   166→
+   167→export interface FileMeta {
+   168→  name: string;
+   169→  size: number;
+   170→  type: string;
+   171→  lastModified: number;
+   172→  key: string;
+   173→}
+   174→
+   175→export interface AnalysisData {
+   176→  sampleRate: number;
+   177→  channels: number;
+   178→  format: "wav" | "decoded";
+   179→  peaksPerSec: number;
+   180→  envelopeHopSec: number;
+   181→  peaksMin: Float32Array;
+   182→  peaksMax: Float32Array;
+   183→  envDb: Float32Array;
+   184→  /** crece durante el análisis; exacta al finalizar */
+   185→  durationSec: number;
+   186→}
+   187→
+   188→export interface Thresholds {
+   189→  dbThreshold: number;
+   190→  minDurationSec: number;
+   191→  mergeGapSec: number;
+   192→}
+   193→
+   194→interface ProjectState {
+   195→  // ---- persistido ----
+   196→  fileMeta: FileMeta | null;
+   197→  sourceKind: "demo" | "user" | null;
+   198→  status: Phase1Status;
+   199→  silences: SilenceRegion[];
+   200→  silenceStats: Pick<SilenceStats, "totalSilenceSec" | "speechRatio">;
+   201→  thresholds: Thresholds;
+   202→  thresholdsTouched: boolean;
+   203→  configDefaults: Thresholds | null;
+   204→  gridInfo: { peaksPerSec: number; envelopeHopSec: number } | null;
+   205→  analysisOpts: AnalysisOptions;
+   206→  savedResult: AnalyzeResult | null;
+   207→  analyzedAt: number | null;
+   208→  /** epoch ms de la aprobación de la Fase 1 (informe PDF) */
+   209→  approvedAt: number | null;
+   210→  fase2: Fase2Estado;
+   211→  fase3: Fase3Estado;
+   212→  fase4: Fase4Estado;
+   213→  fase5: Fase5Estado;
+   214→  fase6: Fase6Estado;
+   215→  /** config fase3 sembrada desde /api/config */
+   216→  configFase3: Fase3Config | null;
+   217→  // ---- volátil ----
+   218→  progress: ProgressInfo | null;
+   219→  analysis: AnalysisData | null;
+   220→  playheadSec: number;
+   221→  error: string | null;
+   222→  sourceMissing: boolean;
+   223→}
+   224→
+   225→interface ProjectActions {
+   226→  seedFromConfig: (cfg: {
+   227→    silencio?: { umbralDb?: number; duracionMinimaSeg?: number; fusionHuecosSeg?: number };
+   228→    analisis?: Partial<AnalysisOptions>;
+   229→    fase2?: unknown;
+   230→    fase3?: unknown;
+   231→    fase4?: unknown;
+   232→    fase6?: unknown;
+   233→  }) => void;
+   234→  beginAnalysis: (meta: FileMeta, kind: "demo" | "user") => void;
+   235→  setMetaInfo: (meta: AudioMeta) => void;
+   236→  setProgress: (p: ProgressInfo) => void;
+   237→  appendChunk: (c: ChunkStats) => void;
+   238→  finishAnalysis: (result: AnalyzeResult) => void;
+   239→  cancelAnalysis: () => void;
+   240→  failAnalysis: (message: string) => void;
+   241→  setThresholds: (t: Partial<Thresholds>) => void;
+   242→  recomputeSilences: () => void;
+   243→  setPlayhead: (t: number) => void;
+   244→  approve: () => void;
+   245→  reopen: () => void;
+   246→  resetAll: () => void;
+   247→  restoreAnalysis: (a: AnalysisData) => void;
+   248→  setSourceMissing: (v: boolean) => void;
+   249→  // ---- Fase 2 ----
+   250→  iniciarFase2: () => void;
+   251→  setProgresoFase2: (p: Fase2Progreso) => void;
+   252→  bloqueFase2Hecho: (
+   253→    bloque: number,
+   254→    nuevos: Segmento[],
+   255→    bloquesHechos: number[],
+   256→    todos: Segmento[]
+   257→  ) => void;
+   258→  terminarFase2: (escenas: Escena[], resumen: Fase2Resumen, avisos: Fase2Aviso[]) => void;
+   259→  fallarFase2: (mensaje: string) => void;
+   260→  cancelarFase2: () => void;
+   261→  corregirTension: (id: string, tension: number) => void;
+   262→  restaurarTensiones: () => void;
+   263→  aprobarFase2: () => void;
+   264→  reabrirFase2: () => void;
+   265→  rehacerFase2: () => void;
+   266→  // ---- Fase 3 ----
+   267→  setCatalogoFase3: (pistas: Pista[]) => void;
+   268→  autoAsignarFase3: () => void;
+   269→  setPistaManualFase3: (escenaId: string, pistaId: string) => void;
+   270→  aprobarFase3: () => void;
+   271→  reabrirFase3: () => void;
+   272→  rehacerFase3: () => void;
+   273→  fallarFase3: (msg: string) => void;
+   274→  // ---- Fase 4 ----
+   275→  seedConfigFase4: (d: Fase4Params) => void;
+   276→  setParamsFase4: (p: Partial<Fase4Params>) => void;
+   277→  restaurarParamsFase4: () => void;
+   278→  setMezclaFase4: (m: Mezcla) => void;
+   279→  aprobarFase4: () => void;
+   280→  reabrirFase4: () => void;
+   281→  // ---- Fase 5 ----
+   282→  materializarFase5: (bloques: BloqueMusica[], params: Fase4Params) => void;
+   283→  aplicarEdicionFase5: (bloques: BloqueMusica[], detalle: string) => void;
+   284→  aprobarFase5: () => void;
+   285→  reabrirFase5: () => void;
+   286→  // ---- Fase 6 ----
+   287→  seedConfigFase6: (d: Fase6Params) => void;
+   288→  setParamsFase6: (p: Partial<Fase6Params>) => void;
+   289→  addExportFase6: (info: ExportInfo) => void;
+   290→  setInformeFase6: (bytes: number) => void;
+   291→  fallarFase6: (msg: string) => void;
+   292→  aprobarFase6: () => void;
+   293→  reabrirFase6: () => void;
+   294→}
+   295→
+   296→export type ProjectStore = ProjectState & ProjectActions;
+   297→
+   298→const grow = (arr: Float32Array, len: number, fill: number): Float32Array => {
+   299→  if (arr.length >= len) return arr;
+   300→  const out = new Float32Array(len);
+   301→  out.set(arr);
+   302→  if (fill !== 0) out.fill(fill, arr.length);
+   303→  return out;
+   304→};
+   305→
+   306→const emptyStats = { totalSilenceSec: 0, speechRatio: 1 };
+   307→
+   308→const initial: ProjectState = {
+   309→  fileMeta: null,
+   310→  sourceKind: null,
+   311→  status: "empty",
+   312→  silences: [],
+   313→  silenceStats: emptyStats,
+   314→  thresholds: { dbThreshold: -38, minDurationSec: 2, mergeGapSec: 0.25 },
+   315→  thresholdsTouched: false,
+   316→  configDefaults: null,
+   317→  gridInfo: null,
+   318→  analysisOpts: DEFAULT_ANALYSIS_OPTIONS,
+   319→  savedResult: null,
+   320→  analyzedAt: null,
+   321→  approvedAt: null,
+   322→  fase2: fase2Inicial,
+   323→  fase3: fase3Inicial,
+   324→  fase4: fase4Inicial,
+   325→  fase5: fase5Inicial,
+   326→  fase6: fase6Inicial,
+   327→  configFase3: null,
+   328→  progress: null,
+   329→  analysis: null,
+   330→  playheadSec: 0,
+   331→  error: null,
+   332→  sourceMissing: false,
+   333→};
+   334→
+   335→function normalizarConfigFase3(bruto: unknown): Fase3Config {
+   336→  const d = FASE3_CONFIG_DEFECTO;
+   337→  if (!bruto || typeof bruto !== "object") return d;
+   338→  const c = bruto as Partial<Fase3Config>;
+   339→  const num = (v: unknown, def: number, min: number, max: number) => {
+   340→    const n = Number(v);
+   341→    return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : def;
+   342→  };
+   343→  return {
+   344→    duracionMinBloqueSeg: num(
+   345→      c.duracionMinBloqueSeg,
+   346→      d.duracionMinBloqueSeg,
+   347→      5,
+   348→      600
+   349→    ),
+   350→    penalizacionFatigaMin: num(
+   351→      c.penalizacionFatigaMin,
+   352→      d.penalizacionFatigaMin,
+   353→      1,
+   354→      60
+   355→    ),
+   356→  };
+   357→}
+   358→
+   359→function normalizarParamsFase4(bruto: unknown): Fase4Params {
+   360→  const d = FASE4_PARAMS_DEFECTO;
+   361→  const c =
+   362→    bruto && typeof bruto === "object"
+   363→      ? (bruto as Partial<Fase4Params>)
+   364→      : {};
+   365→  const num = (
+   366→    v: unknown,
+   367→    def: number,
+   368→    min: number,
+   369→    max: number
+   370→  ): number => {
+   371→    const n = Number(v);
+   372→    return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : def;
+   373→  };
+   374→  return {
+   375→    nivelMusicaDb: num(c.nivelMusicaDb, d.nivelMusicaDb, -30, -8),
+   376→    rangoDinamicoDb: num(c.rangoDinamicoDb, d.rangoDinamicoDb, 0, 12),
+   377→    profundidadDuckingDb: num(
+   378→      c.profundidadDuckingDb,
+   379→      d.profundidadDuckingDb,
+   380→      2,
+   381→      18
+   382→    ),
+   383→    ataqueMs: num(c.ataqueMs, d.ataqueMs, 20, 600),
+   384→    liberacionMs: num(c.liberacionMs, d.liberacionMs, 100, 2000),
+   385→    crossfadeSeg: num(c.crossfadeSeg, d.crossfadeSeg, 0.5, 8),
+   386→    hincharSilenciosDb: num(
+   387→      c.hincharSilenciosDb,
+   388→      d.hincharSilenciosDb,
+   389→      0,
+   390→      12
+   391→    ),
+   392→  };
+   393→}
+   394→
+   395→function normalizarParamsFase6(bruto: unknown): Fase6Params {
+   396→  const d = fase6Inicial.params;
+   397→  const c =
+   398→    bruto && typeof bruto === "object"
+   399→      ? (bruto as Partial<Fase6Params>)
+   400→      : {};
+   401→  const n = Number(c.colaFinalSeg);
+   402→  return {
+   403→    normalizar: typeof c.normalizar === "boolean" ? c.normalizar : d.normalizar,
+   404→    incluirStems:
+   405→      typeof c.incluirStems === "boolean" ? c.incluirStems : d.incluirStems,
+   406→    colaFinalSeg: Number.isFinite(n)
+   407→      ? Math.min(10, Math.max(1, n))
+   408→      : d.colaFinalSeg,
+   409→  };
+   410→}
+   411→
+   412→/** Fusiona la sección fase2 de config.json con los valores por defecto. */
+   413→function normalizarConfigFase2(bruto: unknown): Fase2Config {
+   414→  const d = FASE2_CONFIG_DEFECTO;
+   415→  if (!bruto || typeof bruto !== "object") return d;
+   416→  const c = bruto as Partial<Fase2Config> & {
+   417→    transcripcion?: Partial<Fase2Config["transcripcion"]>;
+   418→    emocion?: Partial<Fase2Config["emocion"]>;
+   419→  };
+   420→  const num = (v: unknown, def: number, min: number, max: number) => {
+   421→    const n = Number(v);
+   422→    return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : def;
+   423→  };
+   424→  return {
+   425→    transcripcion: {
+   426→      idioma: typeof c.transcripcion?.idioma === "string" ? c.transcripcion.idioma : d.transcripcion.idioma,
+   427→      bloqueSegundos: num(c.transcripcion?.bloqueSegundos, d.transcripcion.bloqueSegundos, 60, 600),
+   428→      ajusteSilencioSeg: num(c.transcripcion?.ajusteSilencioSeg, d.transcripcion.ajusteSilencioSeg, 10, 120),
+   429→      asrMaxSeg: num(c.transcripcion?.asrMaxSeg, d.transcripcion.asrMaxSeg, 10, 29.5),
+   430→      reintentos: num(c.transcripcion?.reintentos, d.transcripcion.reintentos, 0, 5),
+   431→      pausaEntreSolicitudesMs: num(c.transcripcion?.pausaEntreSolicitudesMs, d.transcripcion.pausaEntreSolicitudesMs, 300, 10000),
+   432→    },
+   433→    escenaSegundos: num(c.escenaSegundos, d.escenaSegundos, 5, 120),
+   434→    loteEmocion: num(c.loteEmocion, d.loteEmocion, 4, 40),
+   435→    emocion: {
+   436→      pesosTexto: num(c.emocion?.pesosTexto, d.emocion.pesosTexto, 0, 1),
+   437→      pesosAudio: num(c.emocion?.pesosAudio, d.emocion.pesosAudio, 0, 1),
+   438→    },
+   439→  };
+   440→}
+   441→
+   442→export const useProjectStore = create<ProjectStore>()(
+   443→  persist(
+   444→    (set, get) => ({
+   445→      ...initial,
+   446→
+   447→      seedFromConfig: (cfg) => {
+   448→        const s = get();
+   449→        const nextOpts: AnalysisOptions = {
+   450→          ...s.analysisOpts,
+   451→          ...(cfg.analisis ?? {}),
+   452→        };
+   453→        set({ analysisOpts: nextOpts });
+   454→        if (cfg.fase2 !== undefined) {
+   455→          set({ fase2: { ...get().fase2, configFase2: normalizarConfigFase2(cfg.fase2) } });
+   456→        }
+   457→        if (cfg.fase3 !== undefined) {
+   458→          set({ configFase3: normalizarConfigFase3(cfg.fase3) });
+   459→        }
+   460→        if (cfg.fase4 !== undefined) {
+   461→          const d = normalizarParamsFase4(cfg.fase4);
+   462→          set({
+   463→            fase4: {
+   464→              ...get().fase4,
+   465→              configDefaults: d,
+   466→              params: get().fase4.paramsTouched ? get().fase4.params : d,
+   467→            },
+   468→          });
+   469→        }
+   470→        if (cfg.fase6 !== undefined) {
+   471→          const d = normalizarParamsFase6(cfg.fase6);
+   472→          set({
+   473→            fase6: {
+   474→              ...get().fase6,
+   475→              configDefaults: d,
+   476→              params: get().fase6.paramsTouched ? get().fase6.params : d,
+   477→            },
+   478→          });
+   479→        }
+   480→        const sil = cfg.silencio ?? {};
+   481→        const defaults: Thresholds = {
+   482→          dbThreshold: sil.umbralDb ?? s.thresholds.dbThreshold,
+   483→          minDurationSec: sil.duracionMinimaSeg ?? s.thresholds.minDurationSec,
+   484→          mergeGapSec: sil.fusionHuecosSeg ?? s.thresholds.mergeGapSec,
+   485→        };
+   486→        set({ configDefaults: defaults });
+   487→        if (!s.thresholdsTouched) {
+   488→          set({ thresholds: defaults });
+   489→          get().recomputeSilences();
+   490→        }
+   491→      },
+   492→
+   493→      beginAnalysis: (meta, kind) =>
+   494→        set({
+   495→          fileMeta: meta,
+   496→          sourceKind: kind,
+   497→          status: "analyzing",
+   498→          progress: null,
+   499→          analysis: null,
+   500→          gridInfo: null,
+   501→          silences: [],
+   502→          silenceStats: emptyStats,
+   503→          savedResult: null,
+   504→          analyzedAt: null,
+   505→          playheadSec: 0,
+   506→          error: null,
+   507→          sourceMissing: false,
+   508→        }),
+   509→
+   510→      setMetaInfo: (meta) => {
+   511→        const opts = get().analysisOpts;
+   512→        const grid = makeGrid(meta.sampleRate, opts);
+   513→        set({
+   514→          gridInfo: { peaksPerSec: grid.perSec, envelopeHopSec: grid.hopSec },
+   515→          analysis: {
+   516→            sampleRate: meta.sampleRate,
+   517→            channels: meta.channels,
+   518→            format: meta.format,
+   519→            peaksPerSec: grid.perSec,
+   520→            envelopeHopSec: grid.hopSec,
+   521→            peaksMin: new Float32Array(0),
+   522→            peaksMax: new Float32Array(0),
+   523→            envDb: new Float32Array(0),
+   524→            durationSec: 0,
+   525→          },
+   526→        });
+   527→      },
+   528→
+   529→      setProgress: (p) => set({ progress: p }),
+   530→
+   531→      appendChunk: (c) => {
+   532→        const a = get().analysis;
+   533→        if (!a || c.nBuckets === 0) {
+   534→          if (a && c.nBuckets === 0) {
+   535→            set({ analysis: { ...a, durationSec: (c.startSample + c.sampleCount) / a.sampleRate } });
+   536→          }
+   537→          return;
+   538→        }
+   539→        const needB = c.startBucket + c.nBuckets;
+   540→        const needW = c.startWindow + c.nWindows;
+   541→        const peaksMin = grow(a.peaksMin, needB, 1);
+   542→        const peaksMax = grow(a.peaksMax, needB, -1);
+   543→        const envDb = grow(a.envDb, needW, -100);
+   544→        peaksMin.set(c.peaksMin, c.startBucket);
+   545→        peaksMax.set(c.peaksMax, c.startBucket);
+   546→        envDb.set(c.envDb, c.startWindow);
+   547→        set({
+   548→          analysis: {
+   549→            ...a,
+   550→            peaksMin,
+   551→            peaksMax,
+   552→            envDb,
+   553→            durationSec: (c.startSample + c.sampleCount) / a.sampleRate,
+   554→          },
+   555→        });
+   556→      },
+   557→
+   558→      finishAnalysis: (result) => {
+   559→        const a = get().analysis;
+   560→        if (a) {
+   561→          set({
+   562→            analysis: { ...a, durationSec: result.durationSec },
+   563→          });
+   564→        }
+   565→        set({
+   566→          status: "review",
+   567→          progress: null,
+   568→          savedResult: result,
+   569→          analyzedAt: Date.now(),
+   570→        });
+   571→        get().recomputeSilences();
+   572→        // persistir arrays grandes en IndexedDB (fire-and-forget)
+   573→        const cur = get().analysis;
+   574→        const key = get().fileMeta?.key;
+   575→        if (cur && key) {
+   576→          void saveAnalysis(key, {
+   577→            peaksMin: cur.peaksMin,
+   578→            peaksMax: cur.peaksMax,
+   579→            envDb: cur.envDb,
+   580→            savedAt: Date.now(),
+   581→          }).catch(() => undefined);
+   582→        }
+   583→      },
+   584→
+   585→      cancelAnalysis: () => {
+   586→        const hasData = get().analysis !== null && get().analysis!.durationSec > 0;
+   587→        set({
+   588→          status: hasData ? "review" : "empty",
+   589→          progress: null,
+   590→        });
+   591→      },
+   592→
+   593→      failAnalysis: (message) =>
+   594→        set({ status: "error", error: message, progress: null }),
+   595→
+   596→      setThresholds: (t) =>
+   597→        set({
+   598→          thresholds: { ...get().thresholds, ...t },
+   599→          thresholdsTouched: true,
+   600→        }),
+   601→
+   602→      recomputeSilences: () => {
+   603→        const { analysis, thresholds } = get();
+   604→        if (!analysis || analysis.envDb.length === 0) {
+   605→          set({ silences: [], silenceStats: emptyStats });
+   606→          return;
+   607→        }
+   608→        const st = detectSilences(
+   609→          analysis.envDb,
+   610→          analysis.envelopeHopSec,
+   611→          thresholds.dbThreshold,
+   612→          thresholds.minDurationSec,
+   613→          thresholds.mergeGapSec
+   614→        );
+   615→        set({
+   616→          silences: st.regions,
+   617→          silenceStats: {
+   618→            totalSilenceSec: st.totalSilenceSec,
+   619→            speechRatio: st.speechRatio,
+   620→          },
+   621→        });
+   622→      },
+   623→
+   624→      setPlayhead: (t) => set({ playheadSec: t }),
+   625→
+   626→      approve: () => set({ status: "approved", approvedAt: Date.now() }),
+   627→
+   628→      reopen: () => set({ status: "review", approvedAt: null }),
+   629→
+   630→      resetAll: () => set({ ...initial }),
+   631→
+   632→      restoreAnalysis: (a) => set({ analysis: a, progress: null }),
+   633→
+   634→      setSourceMissing: (v) => set({ sourceMissing: v }),
+   635→
+   636→      // ---------- acciones de Fase 2 ----------
+   637→      iniciarFase2: () =>
+   638→        set({
+   639→          fase2: {
+   640→            ...get().fase2,
+   641→            status: "running",
+   642→            error: null,
+   643→            progreso: null,
+   644→          },
+   645→        }),
+   646→
+   647→      setProgresoFase2: (p) =>
+   648→        set({ fase2: { ...get().fase2, progreso: p } }),
+   649→
+   650→      bloqueFase2Hecho: (bloque, nuevos, bloquesHechos, todos) =>
+   651→        set({
+   652→          fase2: {
+   653→            ...get().fase2,
+   654→            segmentos: todos,
+   655→            bloquesHechos,
+   656→            progreso: {
+   657→              ...((get().fase2.progreso ?? {
+   658→                etapa: "transcribiendo",
+   659→                bloque: bloque + 1,
+   660→                totalBloques: Math.max(bloque + 1, bloquesHechos.length),
+   661→                subInicio: 0,
+   662→                subFin: 0,
+   663→                frases: todos.length,
+   664→              })),
+   665→              frases: todos.length,
+   666→            },
+   667→          },
+   668→        }),
+   669→
+   670→      terminarFase2: (escenas, resumen, avisos) =>
+   671→        set({
+   672→          fase2: {
+   673→            ...get().fase2,
+   674→            status: "review",
+   675→            escenas,
+   676→            resumen,
+   677→            avisos,
+   678→            progreso: null,
+   679→            error: null,
+   680→          },
+   681→        }),
+   682→
+   683→      fallarFase2: (mensaje) =>
+   684→        set({
+   685→          fase2: {
+   686→            ...get().fase2,
+   687→            status: "error",
+   688→            error: mensaje,
+   689→            progreso: null,
+   690→          },
+   691→        }),
+   692→
+   693→      cancelarFase2: () => {
+   694→        const f = get().fase2;
+   695→        set({
+   696→          fase2: {
+   697→            ...f,
+   698→            status: f.segmentos.length > 0 ? "review" : "idle",
+   699→            progreso: null,
+   700→          },
+   701→        });
+   702→      },
+   703→
+   704→      corregirTension: (id, tension) =>
+   705→        set({
+   706→          fase2: {
+   707→            ...get().fase2,
+   708→            escenas: get().fase2.escenas.map((e) =>
+   709→              e.id === id
+   710→                ? { ...e, tension, corregido: true }
+   711→                : e
+   712→            ),
+   713→          },
+   714→        }),
+   715→
+   716→      restaurarTensiones: () =>
+   717→        set({
+   718→          fase2: {
+   719→            ...get().fase2,
+   720→            escenas: get().fase2.escenas.map((e) => ({
+   721→              ...e,
+   722→              tension: e.tensionAuto,
+   723→              corregido: false,
+   724→            })),
+   725→          },
+   726→        }),
+   727→
+   728→      aprobarFase2: () =>
+   729→        set({
+   730→          fase2: {
+   731→            ...get().fase2,
+   732→            status: "approved",
+   733→            aprobadaEn: Date.now(),
+   734→          },
+   735→        }),
+   736→
+   737→      reabrirFase2: () =>
+   738→        set({
+   739→          fase2: { ...get().fase2, status: "review", aprobadaEn: null },
+   740→          fase3: fase3Inicial,
+   741→          fase4: fase4Inicial,
+   742→          fase5: fase5Inicial,
+   743→          fase6: fase6Inicial,
+   744→        }),
+   745→
+   746→      rehacerFase2: () =>
+   747→        set({
+   748→          fase2: {
+   749→            ...fase2Inicial,
+   750→            configFase2: get().fase2.configFase2,
+   751→          },
+   752→          fase3: fase3Inicial,
+   753→          fase4: fase4Inicial,
+   754→          fase5: fase5Inicial,
+   755→          fase6: fase6Inicial,
+   756→        }),
+   757→
+   758→      // ---------- acciones de Fase 3 ----------
+   759→
+   760→      setCatalogoFase3: (pistas) =>
+   761→        set({ fase3: { ...get().fase3, catalogo: pistas, error: null } }),
+   762→
+   763→      autoAsignarFase3: () => {
+   764→        const s = get();
+   765→        const escenas = s.fase2.escenas;
+   766→        const pistas = s.fase3.catalogo;
+   767→        if (!pistas || escenas.length === 0) return;
+   768→        const cfg = s.configFase3 ?? FASE3_CONFIG_DEFECTO;
+   769→        const asignaciones = asignarPistas(escenas, pistas, cfg);
+   770→        const resumen = resumirAsignaciones(escenas, asignaciones);
+   771→        set({
+   772→          fase3: {
+   773→            ...s.fase3,
+   774→            asignaciones,
+   775→            resumen,
+   776→            // no degradar una fase ya aprobada (recarga con catálogo fresco)
+   777→            status: s.fase3.status === "approved" ? "approved" : "review",
+   778→            error: null,
+   779→          },
+   780→        });
+   781→      },
+   782→
+   783→      setPistaManualFase3: (escenaId, pistaId) => {
+   784→        const s = get();
+   785→        if (!s.fase3.asignaciones) return;
+   786→        const escena = s.fase2.escenas.find((e) => e.id === escenaId);
+   787→        const pista = s.fase3.catalogo?.find((p) => p.id === pistaId);
+   788→        if (!escena || !pista) return;
+   789→        const asignaciones = s.fase3.asignaciones.map((a) =>
+   790→          a.escenaId === escenaId
+   791→            ? {
+   792→                ...a,
+   793→                pistaId,
+   794→                origen: "manual" as const,
+   795→                match: matchDePista(escena, pista),
+   796→              }
+   797→            : a
+   798→        );
+   799→        set({
+   800→          fase3: {
+   801→            ...s.fase3,
+   802→            asignaciones,
+   803→            resumen: resumirAsignaciones(s.fase2.escenas, asignaciones),
+   804→          },
+   805→        });
+   806→      },
+   807→
+   808→      aprobarFase3: () =>
+   809→        set({
+   810→          fase3: { ...get().fase3, status: "approved", aprobadaEn: Date.now() },
+   811→        }),
+   812→
+   813→      reabrirFase3: () =>
+   814→        set({
+   815→          fase3: { ...get().fase3, status: "review", aprobadaEn: null },
+   816→          fase4: fase4Inicial,
+   817→          fase5: fase5Inicial,
+   818→          fase6: fase6Inicial,
+   819→        }),
+   820→
+   821→      rehacerFase3: () => {
+   822→        set({
+   823→          fase3: {
+   824→            ...get().fase3,
+   825→            asignaciones: null,
+   826→            resumen: null,
+   827→            status: "idle",
+   828→          },
+   829→          fase4: fase4Inicial,
+   830→          fase5: fase5Inicial,
+   831→          fase6: fase6Inicial,
+   832→        });
+   833→        get().autoAsignarFase3();
+   834→      },
+   835→
+   836→      fallarFase3: (msg) =>
+   837→        set({ fase3: { ...get().fase3, status: "error", error: msg } }),
+   838→
+   839→      // ---------- acciones de Fase 4 ----------
+   840→
+   841→      seedConfigFase4: (d) =>
+   842→        set({
+   843→          fase4: {
+   844→            ...get().fase4,
+   845→            configDefaults: d,
+   846→            params: get().fase4.paramsTouched ? get().fase4.params : d,
+   847→          },
+   848→        }),
+   849→
+   850→      setParamsFase4: (p) =>
+   851→        set({
+   852→          fase4: {
+   853→            ...get().fase4,
+   854→            params: { ...get().fase4.params, ...p },
+   855→            paramsTouched: true,
+   856→          },
+   857→        }),
+   858→
+   859→      restaurarParamsFase4: () =>
+   860→        set({
+   861→          fase4: {
+   862→            ...get().fase4,
+   863→            params: get().fase4.configDefaults ?? FASE4_PARAMS_DEFECTO,
+   864→            paramsTouched: false,
+   865→          },
+   866→        }),
+   867→
+   868→      setMezclaFase4: (m) => set({ fase4: { ...get().fase4, mezcla: m } }),
+   869→
+   870→      aprobarFase4: () =>
+   871→        set({
+   872→          fase4: { ...get().fase4, status: "approved", aprobadaEn: Date.now() },
+   873→        }),
+   874→
+   875→      reabrirFase4: () =>
+   876→        set({
+   877→          fase4: { ...get().fase4, status: "review", aprobadaEn: null },
+   878→          fase5: fase5Inicial,
+   879→          fase6: fase6Inicial,
+   880→        }),
+   881→
+   882→      // ---------- acciones de Fase 5 ----------
+   883→
+   884→      materializarFase5: (bloques, params) =>
+   885→        set({
+   886→          fase5: {
+   887→            status: "review",
+   888→            bloques,
+   889→            params,
+   890→            ediciones: 0,
+   891→            detalleEdiciones: [],
+   892→            aprobadaEn: null,
+   893→          },
+   894→        }),
+   895→
+   896→      aplicarEdicionFase5: (bloques, detalle) => {
+   897→        const f = get().fase5;
+   898→        set({
+   899→          fase5: {
+   900→            ...f,
+   901→            bloques,
+   902→            ediciones: f.ediciones + 1,
+   903→            detalleEdiciones: [...f.detalleEdiciones, detalle].slice(-8),
+   904→          },
+   905→        });
+   906→      },
+   907→
+   908→      aprobarFase5: () =>
+   909→        set({
+   910→          fase5: { ...get().fase5, status: "approved", aprobadaEn: Date.now() },
+   911→        }),
+   912→
+   913→      reabrirFase5: () =>
+   914→        set({
+   915→          fase5: { ...get().fase5, status: "review", aprobadaEn: null },
+   916→          fase6: fase6Inicial,
+   917→        }),
+   918→
+   919→      // ---------- acciones de Fase 6 ----------
+   920→
+   921→      seedConfigFase6: (d) =>
+   922→        set({
+   923→          fase6: {
+   924→            ...get().fase6,
+   925→            configDefaults: d,
+   926→            params: get().fase6.paramsTouched ? get().fase6.params : d,
+   927→          },
+   928→        }),
+   929→
+   930→      setParamsFase6: (p) =>
+   931→        set({
+   932→          fase6: {
+   933→            ...get().fase6,
+   934→            params: { ...get().fase6.params, ...p },
+   935→            paramsTouched: true,
+   936→          },
+   937→        }),
+   938→
+   939→      addExportFase6: (info) =>
+   940→        set({
+   941→          fase6: {
+   942→            ...get().fase6,
+   943→            exportaciones: [...get().fase6.exportaciones, info].slice(-12),
+   944→            status: "review",
+   945→          },
+   946→        }),
+   947→
+   948→      setInformeFase6: (bytes) =>
+   949→        set({
+   950→          fase6: {
+   951→            ...get().fase6,
+   952→            informePdf: { bytes, creadoEn: Date.now() },
+   953→          },
+   954→        }),
+   955→
+   956→      fallarFase6: (msg) =>
+   957→        set({ fase6: { ...get().fase6, status: "error", error: msg } }),
+   958→
+   959→      aprobarFase6: () =>
+   960→        set({
+   961→          fase6: { ...get().fase6, status: "approved", aprobadaEn: Date.now() },
+   962→        }),
+   963→
+   964→      reabrirFase6: () =>
+   965→        set({ fase6: { ...get().fase6, status: "review", aprobadaEn: null } }),
+   966→    }),
+   967→    {
+   968→      name: "bardo-project-v1",
+   969→      storage: createJSONStorage(() => localStorage),
+   970→      partialize: (s) => ({
+   971→        fileMeta: s.fileMeta,
+   972→        sourceKind: s.sourceKind,
+   973→        status: s.status === "analyzing" ? "review" : s.status,
+   974→        silences: s.silences,
+   975→        silenceStats: s.silenceStats,
+   976→        thresholds: s.thresholds,
+   977→        thresholdsTouched: s.thresholdsTouched,
+   978→        configDefaults: s.configDefaults,
+   979→        gridInfo: s.gridInfo,
+   980→        analysisOpts: s.analysisOpts,
+   981→        savedResult: s.savedResult,
+   982→        analyzedAt: s.analyzedAt,
+   983→        approvedAt: s.approvedAt,
+   984→        fase2: { ...s.fase2, progreso: null },
+   985→        fase3: { ...s.fase3, catalogo: null },
+   986→        fase4: { ...s.fase4, mezcla: null },
+   987→        fase5: s.fase5,
+   988→        fase6: s.fase6,
+   989→        configFase3: s.configFase3,
+   990→      }),
+   991→    }
+   992→  )
+   993→);
+   994→

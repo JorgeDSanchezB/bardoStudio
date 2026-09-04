@@ -1,6 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+/**
+ * Fase 3 · Gestión de música: biblioteca CC0 + música propia importada por
+ * el usuario, emparejadas con cada escena por ánimo y banda de tensión.
+ */
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -22,12 +27,16 @@ import {
   RotateCcw,
   BadgeCheck,
   Hand,
+  Plus,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 import { useProjectStore } from "@/store/project";
 import { normalizarPista, bandaTension, type Pista } from "@/lib/fase3/tipos";
 import { ANIMO_ETIQUETAS, ANIMO_COLORES } from "@/lib/fase2/types";
 import { formatDurSmart } from "@/lib/format";
 import { GateFase } from "./gate-fase";
+import { ImportarMusica } from "./importar-musica";
 
 /** Fase 3 · Gestión de música: biblioteca CC0 + asignación por ánimo/tensión. */
 export function Fase3Seccion() {
@@ -39,24 +48,39 @@ export function Fase3Seccion() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [sonando, setSonando] = useState<string | null>(null);
   const [progresoAud, setProgresoAud] = useState(0);
+  const [dialogoImport, setDialogoImport] = useState<
+    "importar" | { editar: Pista } | null
+  >(null);
 
-  // ---- cargar catálogo al entrar ----
+  // ---- cargar catálogo (CC0 + propias) al entrar ----
   useEffect(() => {
     if (fase2.status !== "approved" || catalogo) return;
     let vivo = true;
     (async () => {
       const st = useProjectStore.getState();
       try {
-        const res = await fetch("/api/music-library");
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = (await res.json()) as {
+        const [resB, resP] = await Promise.all([
+          fetch("/api/music-library"),
+          fetch("/api/user-music").catch(() => null),
+        ]);
+        if (!resB.ok) throw new Error(`HTTP ${resB.status}`);
+        const dataB = (await resB.json()) as {
           pistas?: Array<Record<string, unknown>>;
         };
-        const pistas = (data.pistas ?? [])
+        const pistasCC0 = (dataB.pistas ?? [])
           .map((r) => normalizarPista(r))
           .filter((p): p is Pista => p !== null);
+        let propias: Pista[] = [];
+        if (resP && resP.ok) {
+          const dataP = (await resP.json()) as {
+            pistas?: Array<Record<string, unknown>>;
+          };
+          propias = (dataP.pistas ?? [])
+            .map((r) => normalizarPista(r))
+            .filter((p): p is Pista => p !== null);
+        }
         if (!vivo) return;
-        st.setCatalogoFase3(pistas);
+        st.setCatalogoFase3([...pistasCC0, ...propias]);
         // la auto-asignación la dispara el efecto dedicado SOLO si no hay
         // asignaciones persistidas (conserva los ajustes manuales tras recargar)
       } catch {
@@ -70,6 +94,28 @@ export function Fase3Seccion() {
       vivo = false;
     };
   }, [fase2.status, catalogo]);
+
+  // ---- refresca solo la parte propia del catálogo (tras importar/editar/borrar) ----
+  const refrescarCatalogo = useCallback(async () => {
+    const st = useProjectStore.getState();
+    const actual = st.fase3.catalogo ?? [];
+    const cc0 = actual.filter((p) => !p.propia);
+    let propias: Pista[] = [];
+    try {
+      const res = await fetch("/api/user-music");
+      if (res.ok) {
+        const data = (await res.json()) as {
+          pistas?: Array<Record<string, unknown>>;
+        };
+        propias = (data.pistas ?? [])
+          .map((r) => normalizarPista(r))
+          .filter((p): p is Pista => p !== null);
+      }
+    } catch {
+      /* se conservan las CC0 */
+    }
+    st.setCatalogoFase3([...cc0, ...propias]);
+  }, []);
 
   // ---- asignar automáticamente si hay catálogo y falta ----
   useEffect(() => {
@@ -126,10 +172,175 @@ export function Fase3Seccion() {
     return new Map(fase3.asignaciones.map((a) => [a.escenaId, a.pistaId]));
   }, [fase3.asignaciones]);
 
+  const pistasCC0 = useMemo(
+    () => (catalogo ?? []).filter((p) => !p.propia),
+    [catalogo]
+  );
+  const pistasPropias = useMemo(
+    () => (catalogo ?? []).filter((p) => p.propia),
+    [catalogo]
+  );
+
+  /** asignaciones que apuntan a pistas que ya no están en la biblioteca */
+  const colgadas = useMemo(() => {
+    if (!fase3.asignaciones || !catalogo) return [];
+    return fase3.asignaciones.filter(
+      (a) => !catalogo.some((p) => p.id === a.pistaId)
+    );
+  }, [fase3.asignaciones, catalogo]);
+
+  const quitarPistaPropia = async (p: Pista) => {
+    const usos = usosPorPista.get(p.id) ?? 0;
+    const msg =
+      usos > 0
+        ? `¿Quitar «${p.titulo}» de tu biblioteca? ${usos} escena${
+            usos > 1 ? "s" : ""
+          } la usa${usos > 1 ? "n" : ""} y quedarán sin pista hasta que reasignes.`
+        : `¿Quitar «${p.titulo}» de tu biblioteca?`;
+    if (!window.confirm(msg)) return;
+    try {
+      const res = await fetch(`/api/user-music/track/${p.id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        window.alert("No se pudo quitar la pista del servidor local.");
+        return;
+      }
+      if (sonando === p.id) {
+        audioRef.current?.pause();
+        setSonando(null);
+      }
+      await refrescarCatalogo();
+    } catch {
+      window.alert("Fallo de red al quitar la pista.");
+    }
+  };
+
   if (fase2.status !== "approved") return null;
 
   const aprobada = fase3.status === "approved";
   const resumen = fase3.resumen;
+
+  /** Tarjeta común de pista (CC0 o propia). */
+  const tarjetaPista = (p: Pista, esPropia: boolean) => {
+    const color = ANIMO_COLORES[p.animo];
+    const usos = usosPorPista.get(p.id) ?? 0;
+    const activa = sonando === p.id;
+    return (
+      <Card
+        key={p.id}
+        className="relative overflow-hidden border-zinc-800 bg-zinc-950/60"
+        style={{ borderColor: activa ? color : undefined }}
+      >
+        <div
+          className="absolute inset-x-0 top-0 h-0.5"
+          style={{ background: color }}
+        />
+        <CardContent className="space-y-2 p-4">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-zinc-100">
+                {p.titulo}
+                {esPropia && (
+                  <Badge
+                    variant="outline"
+                    className="ms-2 h-4 border-amber-700/60 px-1.5 text-[9px] text-amber-300"
+                  >
+                    tuya
+                  </Badge>
+                )}
+              </p>
+              <p className="text-[11px] text-zinc-500">
+                <span style={{ color }}>{ANIMO_ETIQUETAS[p.animo]}</span>{" "}
+                · tensión {bandaTension(p)} · {p.bpm} BPM ·{" "}
+                {p.tonalidad}
+              </p>
+            </div>
+            <div className="flex shrink-0 items-center gap-1">
+              {esPropia && (
+                <>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8 text-zinc-500 hover:text-zinc-200"
+                    aria-label={`Editar ${p.titulo}`}
+                    onClick={() => setDialogoImport({ editar: p })}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8 text-zinc-500 hover:text-rose-300"
+                    aria-label={`Quitar ${p.titulo} de la biblioteca`}
+                    onClick={() => void quitarPistaPropia(p)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </>
+              )}
+              <Button
+                size="icon"
+                className="h-9 w-9 bg-zinc-800 text-zinc-200 hover:bg-zinc-700"
+                aria-label={activa ? `Detener ${p.titulo}` : `Escuchar ${p.titulo}`}
+                onClick={() => alternarAudicion(p)}
+              >
+                {activa ? (
+                  <Square className="h-3.5 w-3.5" />
+                ) : (
+                  <Play className="h-4 w-4" />
+                )}
+              </Button>
+            </div>
+          </div>
+
+          {/* banda de tensión */}
+          <div
+            className="relative h-1.5 w-full overflow-hidden rounded-full bg-zinc-800"
+            aria-hidden
+          >
+            <div
+              className="absolute h-full rounded-full"
+              style={{
+                left: `${p.tensionMin}%`,
+                width: `${Math.max(4, p.tensionMax - p.tensionMin)}%`,
+                background: color,
+              }}
+            />
+          </div>
+
+          <p className="text-[11px] text-zinc-400">
+            {esPropia ? "tu archivo · se buclea igual que las CC0" : p.instrumentacion}
+          </p>
+          <p className="line-clamp-2 text-[11px] leading-snug text-zinc-500">
+            {esPropia ? p.descripcion || "importada por ti" : p.descripcion}
+          </p>
+          <div className="flex items-center justify-between text-[10px] text-zinc-500">
+            <span>
+              {formatDurSmart(p.durSec)}
+              {esPropia ? "" : " · loop limpio"}
+            </span>
+            {usos > 0 && (
+              <Badge
+                variant="outline"
+                className="h-5 px-1.5 text-[9px]"
+                style={{ borderColor: `${color}66`, color }}
+              >
+                {usos} escena{usos > 1 ? "s" : ""}
+              </Badge>
+            )}
+          </div>
+          {activa && (
+            <Progress
+              value={progresoAud * 100}
+              className="h-1"
+              aria-label="Progreso de la audición"
+            />
+          )}
+        </CardContent>
+      </Card>
+    );
+  };
 
   return (
     <section
@@ -145,12 +356,26 @@ export function Fase3Seccion() {
           </Badge>
         </h2>
         <p className="max-w-3xl text-sm leading-relaxed text-zinc-400">
-          La biblioteca local de <strong className="text-zinc-200">9 pistas CC0</strong>{" "}
-          (sintetizadas de forma determinista, sin terceros) se empareja con cada
-          escena por <strong className="text-zinc-200">ánimo y banda de tensión</strong>.
-          Escucha cualquier pista, cambia la asignación de una escena y aprueba
-          para desbloquear la mezcla automática.
+          La biblioteca local de{" "}
+          <strong className="text-zinc-200">{pistasCC0.length} pistas CC0</strong>{" "}
+          (sintetizadas de forma determinista) se empareja con cada escena por{" "}
+          <strong className="text-zinc-200">ánimo y banda de tensión</strong> —
+          y puedes <strong className="text-amber-300">importar tu propia música</strong>{" "}
+          para usarla en lugar de (o junto a) la nuestra. Escucha cualquier
+          pista, cambia la asignación de una escena y aprueba para desbloquear
+          la mezcla automática.
         </p>
+        <div className="pt-1">
+          <Button
+            variant="secondary"
+            size="sm"
+            className="h-9 gap-2"
+            onClick={() => setDialogoImport("importar")}
+          >
+            <Plus className="h-4 w-4 text-amber-400" />
+            Importar tu propia música
+          </Button>
+        </div>
       </div>
 
       {fase3.status === "error" && fase3.error && (
@@ -158,6 +383,21 @@ export function Fase3Seccion() {
           <AlertTriangle className="h-4 w-4" />
           <AlertTitle>Error de la Fase 3</AlertTitle>
           <AlertDescription>{fase3.error}</AlertDescription>
+        </Alert>
+      )}
+
+      {colgadas.length > 0 && (
+        <Alert className="border-amber-800/50 bg-amber-950/20 text-amber-200">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Pistas que ya no están en la biblioteca</AlertTitle>
+          <AlertDescription>
+            {colgadas.length} asignaci{colgadas.length > 1 ? "ones apuntan" : "ón apunta"}{" "}
+            a pista{colgadas.length > 1 ? "s" : ""} quitada
+            {colgadas.length > 1 ? "s" : ""} de tu biblioteca. Vuelve a
+            importar{" "}
+            {colgadas.length > 1 ? "los archivos" : "el archivo"} o pulsa
+            «Reasignar automáticamente» para resolverlo.
+          </AlertDescription>
         </Alert>
       )}
 
@@ -172,90 +412,43 @@ export function Fase3Seccion() {
 
       {catalogo && (
         <>
-          {/* biblioteca */}
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {catalogo.map((p) => {
-              const color = ANIMO_COLORES[p.animo];
-              const usos = usosPorPista.get(p.id) ?? 0;
-              const activa = sonando === p.id;
-              return (
-                <Card
-                  key={p.id}
-                  className="relative overflow-hidden border-zinc-800 bg-zinc-950/60"
-                  style={{ borderColor: activa ? color : undefined }}
-                >
-                  <div
-                    className="absolute inset-x-0 top-0 h-0.5"
-                    style={{ background: color }}
-                  />
-                  <CardContent className="space-y-2 p-4">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-zinc-100">
-                          {p.titulo}
-                        </p>
-                        <p className="text-[11px] text-zinc-500">
-                          <span style={{ color }}>{ANIMO_ETIQUETAS[p.animo]}</span>{" "}
-                          · tensión {bandaTension(p)} · {p.bpm} BPM ·{" "}
-                          {p.tonalidad}
-                        </p>
-                      </div>
-                      <Button
-                        size="icon"
-                        className="h-9 w-9 shrink-0 bg-zinc-800 text-zinc-200 hover:bg-zinc-700"
-                        aria-label={activa ? `Detener ${p.titulo}` : `Escuchar ${p.titulo}`}
-                        onClick={() => alternarAudicion(p)}
-                      >
-                        {activa ? (
-                          <Square className="h-3.5 w-3.5" />
-                        ) : (
-                          <Play className="h-4 w-4" />
-                        )}
-                      </Button>
-                    </div>
+          {/* biblioteca CC0 */}
+          <div className="space-y-2">
+            <p className="px-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+              Biblioteca CC0 · {pistasCC0.length} pistas
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {pistasCC0.map((p) => tarjetaPista(p, false))}
+            </div>
+          </div>
 
-                    {/* banda de tensión */}
-                    <div
-                      className="relative h-1.5 w-full overflow-hidden rounded-full bg-zinc-800"
-                      aria-hidden
-                    >
-                      <div
-                        className="absolute h-full rounded-full"
-                        style={{
-                          left: `${p.tensionMin}%`,
-                          width: `${Math.max(4, p.tensionMax - p.tensionMin)}%`,
-                          background: color,
-                        }}
-                      />
-                    </div>
-
-                    <p className="text-[11px] text-zinc-400">{p.instrumentacion}</p>
-                    <p className="line-clamp-2 text-[11px] leading-snug text-zinc-500">
-                      {p.descripcion}
-                    </p>
-                    <div className="flex items-center justify-between text-[10px] text-zinc-500">
-                      <span>{formatDurSmart(p.durSec)} · loop limpio</span>
-                      {usos > 0 && (
-                        <Badge
-                          variant="outline"
-                          className="h-5 px-1.5 text-[9px]"
-                          style={{ borderColor: `${color}66`, color }}
-                        >
-                          {usos} escena{usos > 1 ? "s" : ""}
-                        </Badge>
-                      )}
-                    </div>
-                    {activa && (
-                      <Progress
-                        value={progresoAud * 100}
-                        className="h-1"
-                        aria-label="Progreso de la audición"
-                      />
-                    )}
-                  </CardContent>
-                </Card>
-              );
-            })}
+          {/* música propia del usuario */}
+          <div className="space-y-2">
+            <p className="px-1 text-xs font-semibold uppercase tracking-wide text-amber-500/80">
+              Tu música · {pistasPropias.length}{" "}
+              {pistasPropias.length === 1 ? "pista" : "pistas"}
+            </p>
+            {pistasPropias.length === 0 ? (
+              <button
+                type="button"
+                className="w-full rounded-lg border border-dashed border-zinc-700/80 bg-zinc-900/30 p-4 text-left transition-colors hover:border-amber-600/60 hover:bg-amber-950/10"
+                onClick={() => setDialogoImport("importar")}
+              >
+                <p className="text-xs font-semibold text-zinc-300">
+                  ¿Prefieres usar tus propias composiciones?
+                </p>
+                <p className="pt-1 text-[11px] leading-relaxed text-zinc-500">
+                  Importa archivos de audio tuyos (WAV, MP3, M4A, OGG, FLAC,
+                  Opus, AAC, WebM · ≤ 100 MB). Se guardan en tu biblioteca
+                  personal del servidor local y se buclean igual que las pistas
+                  CC0, con la banda de tensión que tú definas.
+                </p>
+              </button>
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {pistasPropias.map((p) => tarjetaPista(p, true))}
+              </div>
+            )}
           </div>
 
           {/* tabla de asignaciones */}
@@ -383,6 +576,11 @@ export function Fase3Seccion() {
                                           }}
                                         />
                                         {p.titulo}
+                                        {p.propia && (
+                                          <span className="text-amber-400">
+                                            · tuya
+                                          </span>
+                                        )}
                                         <span className="text-zinc-500">
                                           ({bandaTension(p)})
                                         </span>
@@ -455,6 +653,18 @@ export function Fase3Seccion() {
           )}
         </>
       )}
+
+      {/* diálogo de importación/edición de música propia */}
+      <ImportarMusica
+        open={dialogoImport !== null}
+        onOpenChange={(v) => setDialogoImport(v ? "importar" : null)}
+        onCambio={() => void refrescarCatalogo()}
+        pistaEditar={
+          dialogoImport && typeof dialogoImport === "object"
+            ? dialogoImport.editar
+            : null
+        }
+      />
 
       {/* elemento de audición (siempre montado) */}
       <audio ref={audioRef} preload="none" className="hidden">

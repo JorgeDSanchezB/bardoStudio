@@ -15,12 +15,15 @@ import {
   Play,
   RotateCcw,
   Loader2,
+  Save,
+  FolderOpen,
+  FileUp,
 } from "lucide-react";
-import { useProjectStore, type FileMeta } from "@/store/project";
+import { useProjectStore, snapshotProyecto, type FileMeta } from "@/store/project";
 import { analyzeAudio } from "@/lib/audio/analyze";
 import type { AnalysisOptions } from "@/lib/audio/types";
-import { loadAnalysis, deleteAnalysis } from "@/lib/idb";
-import { clamp, formatDurSmart, formatBytes } from "@/lib/format";
+import { loadAnalysis, deleteAnalysis, saveAnalysis, type StoredAnalysis } from "@/lib/idb";
+import { clamp, formatDurSmart, formatBytes, formatHace } from "@/lib/format";
 import { PhaseStepper, type EstadosFases } from "@/components/bardo/phase-stepper";
 import { UploadPanel } from "@/components/bardo/upload-panel";
 import { AnalysisProgress } from "@/components/bardo/analysis-progress";
@@ -43,6 +46,24 @@ import { obtenerControlMotor } from "@/lib/fase5/registro-motor";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ejecutarFase2 } from "@/lib/fase2/pipeline";
 import { FASE2_CONFIG_DEFECTO } from "@/lib/fase2/types";
+import { GuardarDialog } from "@/components/bardo/guardar-dialog";
+import { ProyectosDialog } from "@/components/bardo/proyectos-dialog";
+import {
+  TIPO_PROYECTO,
+  VERSION_PROYECTO,
+  parsearProyecto,
+  nombreArchivoProyecto,
+  type ProyectoGuardado,
+} from "@/lib/proyecto/tipos";
+import {
+  empaquetarAnalysis,
+  desempaquetarAnalysis,
+  ab2base64,
+  base642ab,
+} from "@/lib/proyecto/pack";
+import { descargarBlob } from "@/lib/fase6/informe";
+
+const ACCEPT_AUDIO = ".wav,.mp3,.m4a,.ogg,.oga,.flac,.opus,.aac,.webm,audio/*";
 
 export default function Page() {
   const status = useProjectStore((s) => s.status);
@@ -76,6 +97,16 @@ export default function Page() {
   const cancelFase2Ref = useRef(false);
   const [hydrated, setHydrated] = useState(false);
 
+  // ---- proyectos guardados (estilo Camtasia) ----
+  const proyecto = useProjectStore((s) => s.proyecto);
+  const sourceMissing = useProjectStore((s) => s.sourceMissing);
+  const [dialogoGuardar, setDialogoGuardar] = useState(false);
+  const [dialogoProyectos, setDialogoProyectos] = useState(false);
+  const [guardando, setGuardando] = useState(false);
+  const [errorGuardar, setErrorGuardar] = useState<string | null>(null);
+  const [descargando, setDescargando] = useState(false);
+  const readjuntarRef = useRef<HTMLInputElement | null>(null);
+
   const durationSec = analysis?.durationSec ?? 0;
 
   // ---------- hidratación del store persistido ----------
@@ -92,9 +123,37 @@ export default function Page() {
     (async () => {
       const st = useProjectStore.getState();
       if (st.fileMeta && st.status !== "empty" && st.status !== "analyzing") {
-        const saved = await loadAnalysis(st.fileMeta.key).catch(
+        let saved = await loadAnalysis(st.fileMeta.key).catch(
           () => undefined
         );
+        // proyecto guardado: si el caché local no está, probar el paquete del servidor
+        if (
+          (!saved || saved.envDb.length === 0) &&
+          st.proyecto &&
+          st.savedResult
+        ) {
+          try {
+            const res = await fetch(
+              `/api/proyectos/${st.proyecto.id}/analysis`
+            );
+            if (res.ok) {
+              const pack = desempaquetarAnalysis(await res.arrayBuffer());
+              if (pack) {
+                saved = {
+                  peaksMin: pack.peaksMin,
+                  peaksMax: pack.peaksMax,
+                  envDb: pack.envDb,
+                  savedAt: Date.now(),
+                };
+                void saveAnalysis(st.fileMeta.key, saved).catch(
+                  () => undefined
+                );
+              }
+            }
+          } catch {
+            /* sin paquete en el servidor */
+          }
+        }
         if (saved && st.savedResult && saved.envDb.length > 0) {
           const gi = st.gridInfo;
           st.restoreAnalysis({
@@ -116,6 +175,24 @@ export default function Page() {
               ? "/demo/narracion-voz-demo.wav"
               : "/demo/narration-demo.wav"
           );
+        } else if (st.proyecto) {
+          // proyecto guardado: el audio original vive en el servidor local
+          try {
+            const res = await fetch(
+              `/api/proyectos/${st.proyecto.id}/audio`
+            );
+            if (!res.ok) throw new Error("sin audio");
+            const blob = await res.blob();
+            if (blob.size <= 1024) throw new Error("audio vacío");
+            if (objectUrlRef.current) {
+              URL.revokeObjectURL(objectUrlRef.current);
+            }
+            const url = URL.createObjectURL(blob);
+            objectUrlRef.current = url;
+            setSourceUrl(url);
+          } catch {
+            st.setSourceMissing(true);
+          }
         } else {
           st.setSourceMissing(true);
         }
@@ -350,12 +427,393 @@ export default function Page() {
     if (sourceKind === "demo") {
       void loadDemo();
     } else {
-      useProjectStore.getState().resetAll();
-      setSourceUrl(null);
+      // conservar el pipeline (y el proyecto guardado si lo hay):
+      // re-adjuntar el archivo original y re-analizar solo si hace falta
+      readjuntarRef.current?.click();
     }
   }, [sourceKind, loadDemo]);
 
-  // ---------- Fase 2: transcripción + tensión ----------
+  // ---------- proyectos guardados (estilo Camtasia) ----------
+
+  /** ¿hay trabajo sin guardar que se perdería al cambiar de proyecto? */
+  const confirmarDescartar = useCallback((): boolean => {
+    const st = useProjectStore.getState();
+    if (!st.fileMeta) return true;
+    return window.confirm(
+      "Hay un proyecto en marcha en esta pestaña. ¿Descartar los cambios no guardados y continuar?"
+    );
+  }, []);
+
+  /** aplica un paquete de análisis (del servidor o de un .bsproj) al estado. */
+  const aplicarPack = useCallback((pack: {
+    peaksMin: Float32Array;
+    peaksMax: Float32Array;
+    envDb: Float32Array;
+  }): boolean => {
+    const st = useProjectStore.getState();
+    if (!st.savedResult || !st.fileMeta) return false;
+    const gi = st.gridInfo;
+    st.restoreAnalysis({
+      sampleRate: st.savedResult.sampleRate,
+      channels: st.savedResult.channels,
+      format: st.savedResult.format,
+      peaksPerSec: gi?.peaksPerSec ?? st.analysisOpts.peaksPerSec,
+      envelopeHopSec: gi?.envelopeHopSec ?? st.analysisOpts.envelopeHopSec,
+      peaksMin: pack.peaksMin,
+      peaksMax: pack.peaksMax,
+      envDb: pack.envDb,
+      durationSec: st.savedResult.durationSec,
+    });
+    st.recomputeSilences();
+    // cachear también localmente para las próximas recargas
+    void saveAnalysis(st.fileMeta.key, {
+      peaksMin: pack.peaksMin,
+      peaksMax: pack.peaksMax,
+      envDb: pack.envDb,
+      savedAt: Date.now(),
+    }).catch(() => undefined);
+    return true;
+  }, []);
+
+  /** restaura desde la caché IndexedDB. */
+  const aplicarSaved = useCallback((saved: StoredAnalysis): boolean => {
+    const st = useProjectStore.getState();
+    if (!st.savedResult) return false;
+    const gi = st.gridInfo;
+    st.restoreAnalysis({
+      sampleRate: st.savedResult.sampleRate,
+      channels: st.savedResult.channels,
+      format: st.savedResult.format,
+      peaksPerSec: gi?.peaksPerSec ?? st.analysisOpts.peaksPerSec,
+      envelopeHopSec: gi?.envelopeHopSec ?? st.analysisOpts.envelopeHopSec,
+      peaksMin: saved.peaksMin,
+      peaksMax: saved.peaksMax,
+      envDb: saved.envDb,
+      durationSec: st.savedResult.durationSec,
+    });
+    st.recomputeSilences();
+    return true;
+  }, []);
+
+  const demoUrlDe = useCallback(
+    (nombre?: string | null) =>
+      nombre === "narracion-voz-demo.wav"
+        ? "/demo/narracion-voz-demo.wav"
+        : "/demo/narration-demo.wav",
+    []
+  );
+
+  /** abre un proyecto guardado en el servidor local. */
+  const abrirProyectoServidor = useCallback(
+    async (id: string) => {
+      if (!confirmarDescartar()) return;
+      try {
+        const res = await fetch(`/api/proyectos/${id}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = (await res.json()) as {
+          proyecto?: unknown;
+          tieneAudio?: boolean;
+          tieneAnalisis?: boolean;
+        };
+        const p = parsearProyecto(data.proyecto);
+        if (!p) {
+          throw new Error("el archivo del proyecto no es legible (¿versión antigua?)");
+        }
+        if (!useProjectStore.getState().aplicarProyecto(p)) {
+          throw new Error("el estado del proyecto no se pudo interpretar");
+        }
+        audioRef.current?.pause();
+
+        // ---- análisis: paquete del servidor → caché local → re-analizar ----
+        let restaurado = false;
+        if (data.tieneAnalisis) {
+          try {
+            const resAn = await fetch(`/api/proyectos/${id}/analysis`);
+            if (resAn.ok) {
+              const pack = desempaquetarAnalysis(await resAn.arrayBuffer());
+              if (pack) restaurado = aplicarPack(pack);
+            }
+          } catch {
+            /* sin paquete */
+          }
+        }
+        if (!restaurado) {
+          const key = useProjectStore.getState().fileMeta?.key;
+          if (key) {
+            const saved = await loadAnalysis(key).catch(() => undefined);
+            if (saved && saved.envDb.length > 0) {
+              restaurado = aplicarSaved(saved);
+            }
+          }
+        }
+
+        // ---- audio original ----
+        const st = useProjectStore.getState();
+        let audioOk = false;
+        if (st.sourceKind === "demo") {
+          setSourceUrl(demoUrlDe(st.fileMeta?.name));
+          audioOk = true;
+        } else if (data.tieneAudio) {
+          try {
+            const resAu = await fetch(`/api/proyectos/${id}/audio`);
+            if (resAu.ok) {
+              const blob = await resAu.blob();
+              if (blob.size > 1024) {
+                if (objectUrlRef.current) {
+                  URL.revokeObjectURL(objectUrlRef.current);
+                }
+                const url = URL.createObjectURL(blob);
+                objectUrlRef.current = url;
+                setSourceUrl(url);
+                audioOk = true;
+              }
+            }
+          } catch {
+            /* sin audio en el servidor */
+          }
+        }
+        if (audioOk) {
+          useProjectStore.getState().setSourceMissing(false);
+        } else {
+          setSourceUrl(null);
+          useProjectStore.getState().setSourceMissing(true);
+        }
+
+        // sin análisis disponible pero con audio: re-analizar en segundo plano
+        if (
+          !restaurado &&
+          audioOk &&
+          objectUrlRef.current &&
+          st.fileMeta &&
+          st.status !== "empty"
+        ) {
+          const blob = await fetch(objectUrlRef.current).then((r) => r.blob());
+          void runAnalysis(
+            blob,
+            st.fileMeta,
+            st.sourceKind === "demo" ? "demo" : "user"
+          );
+        }
+        setDialogoProyectos(false);
+      } catch (err) {
+        window.alert(
+          `No se pudo abrir el proyecto: ${
+            err instanceof Error ? err.message : String(err)
+          }`
+        );
+      }
+    },
+    [confirmarDescartar, aplicarPack, aplicarSaved, demoUrlDe, runAnalysis]
+  );
+
+  /** importa un archivo .bsproj descargado antes. */
+  const importarBsproj = useCallback(
+    async (file: File) => {
+      if (!confirmarDescartar()) return;
+      try {
+        const p = parsearProyecto(JSON.parse(await file.text()));
+        if (!p) {
+          throw new Error("no parece un proyecto de Bardo Studio (.bsproj)");
+        }
+        if (!useProjectStore.getState().aplicarProyecto(p)) {
+          throw new Error("el estado del proyecto no es válido");
+        }
+        audioRef.current?.pause();
+
+        // análisis incrustado (base64) o caché local
+        let restaurado = false;
+        if (p.analisis) {
+          const ab = base642ab(p.analisis);
+          const pack = ab ? desempaquetarAnalysis(ab) : null;
+          if (pack) restaurado = aplicarPack(pack);
+        }
+        if (!restaurado) {
+          const key = useProjectStore.getState().fileMeta?.key;
+          if (key) {
+            const saved = await loadAnalysis(key).catch(() => undefined);
+            if (saved && saved.envDb.length > 0) {
+              restaurado = aplicarSaved(saved);
+            }
+          }
+        }
+
+        const st = useProjectStore.getState();
+        if (st.sourceKind === "demo") {
+          setSourceUrl(demoUrlDe(st.fileMeta?.name));
+          useProjectStore.getState().setSourceMissing(false);
+        } else {
+          // el .bsproj no lleva el audio: pedir re-adjuntar (como Camtasia)
+          setSourceUrl(null);
+          useProjectStore.getState().setSourceMissing(true);
+        }
+        setDialogoProyectos(false);
+      } catch (err) {
+        window.alert(
+          `No se pudo importar el .bsproj: ${
+            err instanceof Error ? err.message : String(err)
+          }`
+        );
+      }
+    },
+    [confirmarDescartar, aplicarPack, aplicarSaved, demoUrlDe]
+  );
+
+  /** guarda el proyecto en el servidor local (audio + análisis incluidos). */
+  const guardarProyecto = useCallback(
+    async (nombre: string, comoCopia: boolean) => {
+      setGuardando(true);
+      setErrorGuardar(null);
+      try {
+        const st = useProjectStore.getState();
+        const estado = snapshotProyecto();
+        const musicaPropia = (st.fase3.catalogo ?? []).filter(
+          (x) => x.propia
+        );
+        const fd = new FormData();
+        fd.set(
+          "proyecto",
+          JSON.stringify({
+            tipo: TIPO_PROYECTO,
+            version: VERSION_PROYECTO,
+            meta: {
+              id: comoCopia ? undefined : st.proyecto?.id,
+              nombre,
+            },
+            estado,
+            musicaPropia,
+          })
+        );
+        // audio en memoria (las demos ya viven en el servidor)
+        if (st.sourceKind === "user" && objectUrlRef.current) {
+          const blob = await fetch(objectUrlRef.current)
+            .then((r) => r.blob())
+            .catch(() => null);
+          if (blob && blob.size > 1024) {
+            fd.set("audio", blob, st.fileMeta?.name ?? "audio.bin");
+          }
+        }
+        // análisis empaquetado (evita re-analizar al reabrir)
+        if (st.analysis && st.analysis.envDb.length > 0) {
+          fd.set(
+            "analisis",
+            new Blob([
+              empaquetarAnalysis({
+                peaksMin: st.analysis.peaksMin,
+                peaksMax: st.analysis.peaksMax,
+                envDb: st.analysis.envDb,
+              }),
+            ])
+          );
+        }
+        const res = await fetch("/api/proyectos", {
+          method: "POST",
+          body: fd,
+        });
+        if (!res.ok) {
+          let detalle = `HTTP ${res.status}`;
+          try {
+            const j = (await res.json()) as { error?: string };
+            if (j?.error) detalle = j.error;
+          } catch {
+            /* sin cuerpo */
+          }
+          throw new Error(detalle);
+        }
+        const data = (await res.json()) as {
+          id: string;
+          nombre: string;
+          guardadoEn: number;
+          creadoEn?: number;
+        };
+        const previo = st.proyecto;
+        useProjectStore.getState().marcarProyectoGuardado({
+          id: data.id,
+          nombre: data.nombre,
+          creadoEn:
+            data.creadoEn ??
+            (previo && !comoCopia ? previo.creadoEn : data.guardadoEn),
+          guardadoEn: data.guardadoEn,
+        });
+        setDialogoGuardar(false);
+      } catch (err) {
+        setErrorGuardar(
+          err instanceof Error ? err.message : String(err)
+        );
+      } finally {
+        setGuardando(false);
+      }
+    },
+    []
+  );
+
+  /** descarga el proyecto portable (.bsproj, con el análisis incrustado). */
+  const descargarBsproj = useCallback(async (nombre: string) => {
+    setDescargando(true);
+    try {
+      const st = useProjectStore.getState();
+      const musicaPropia = (st.fase3.catalogo ?? []).filter(
+        (x) => x.propia
+      );
+      const p: ProyectoGuardado = {
+        tipo: TIPO_PROYECTO,
+        version: VERSION_PROYECTO,
+        meta: {
+          id: st.proyecto?.id ?? "",
+          nombre,
+          creadoEn: st.proyecto?.creadoEn ?? Date.now(),
+          guardadoEn: Date.now(),
+        },
+        estado: snapshotProyecto() as unknown as ProyectoGuardado["estado"],
+        musicaPropia,
+        analisis:
+          st.analysis && st.analysis.envDb.length > 0
+            ? ab2base64(
+                empaquetarAnalysis({
+                  peaksMin: st.analysis.peaksMin,
+                  peaksMax: st.analysis.peaksMax,
+                  envDb: st.analysis.envDb,
+                })
+              )
+            : undefined,
+      };
+      descargarBlob(
+        new Blob([JSON.stringify(p)], { type: "application/json" }),
+        nombreArchivoProyecto(nombre)
+      );
+    } finally {
+      setDescargando(false);
+    }
+  }, []);
+
+  /** re-adjunta el audio original (tras importar .bsproj o audio ausente). */
+  const handleReadjuntar = useCallback(
+    (file: File) => {
+      const st = useProjectStore.getState();
+      const meta = st.fileMeta;
+      if (!meta) return;
+      const coincide =
+        meta.name === file.name && meta.size === file.size;
+      if (
+        !coincide &&
+        !window.confirm(
+          `El archivo elegido («${file.name}», ${formatBytes(
+            file.size
+          )}) no coincide exactamente con el original («${
+            meta.name
+          }», ${formatBytes(meta.size)}). ¿Usarlo igualmente?`
+        )
+      ) {
+        return;
+      }
+      attachSource(file, "user");
+      useProjectStore.getState().setSourceMissing(false);
+      if (!st.analysis || st.analysis.envDb.length === 0) {
+        void runAnalysis(file, meta, "user");
+      }
+    },
+    [runAnalysis]
+  );
+
   const runFase2 = useCallback(
     async (rehacer: boolean) => {
       const st = useProjectStore.getState();
@@ -458,6 +916,14 @@ export default function Page() {
     }
   }, [runAnalysis]);
 
+  // derivados de proyectos guardados
+  const puedeGuardar =
+    status !== "analyzing" && fase2.status !== "running";
+  const nombreInicialProyecto =
+    proyecto?.nombre ??
+    fileMeta?.name.replace(/\.[^.]+$/, "") ??
+    "Mi proyecto";
+
   // ---------- render ----------
   const showUpload = !hydrated || status === "empty";
 
@@ -554,16 +1020,59 @@ export default function Page() {
               Musicalización auditable de narraciones · D&amp;D y audiolibros
             </p>
           </div>
-          <div className="ms-auto flex items-center gap-2">
+          <div className="ms-auto flex items-center gap-1.5 sm:gap-2">
+            {proyecto && (
+              <Badge
+                variant="outline"
+                className="hidden max-w-[170px] items-center gap-1.5 border-amber-800/60 text-[10px] text-amber-300 md:inline-flex"
+                title={`${proyecto.nombre} · guardado ${formatHace(proyecto.guardadoEn)}`}
+              >
+                <span
+                  className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400"
+                  aria-hidden
+                />
+                <span className="truncate">{proyecto.nombre}</span>
+              </Badge>
+            )}
             <Badge
               variant="outline"
-              className="gap-1 border-emerald-800/60 text-[10px] text-emerald-300"
+              className="hidden gap-1 border-emerald-800/60 text-[10px] text-emerald-300 sm:inline-flex"
             >
-              <ShieldCheck className="h-3 w-3" /> 6 fases auditables
+              <ShieldCheck className="h-3 w-3" /> 6 fases
             </Badge>
             <Badge variant="outline" className="text-[10px] text-zinc-400">
               Fase {faseActiva} / 6
             </Badge>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 gap-1.5 px-2 text-[11px] text-zinc-300"
+              onClick={() => setDialogoProyectos(true)}
+            >
+              <FolderOpen className="h-4 w-4" aria-hidden />
+              <span className="hidden sm:inline">Proyectos</span>
+              <span className="sr-only sm:hidden">Abrir proyectos guardados</span>
+            </Button>
+            {fileMeta && (
+              <Button
+                size="sm"
+                className="h-8 gap-1.5 bg-amber-500 px-2.5 text-[11px] font-semibold text-zinc-950 hover:bg-amber-400"
+                disabled={!puedeGuardar}
+                title={
+                  puedeGuardar
+                    ? "Guardar el proyecto en este equipo"
+                    : "Espera a que termine el análisis en curso"
+                }
+                onClick={() => {
+                  setErrorGuardar(null);
+                  setDialogoGuardar(true);
+                }}
+              >
+                <Save className="h-4 w-4" aria-hidden />
+                <span className="hidden sm:inline">Guardar</span>
+                <span className="sr-only sm:hidden">Guardar proyecto</span>
+              </Button>
+            )}
           </div>
         </div>
       </header>
@@ -604,6 +1113,17 @@ export default function Page() {
                 onDemoVoz={cargarDemoVoz}
                 demoVozLoading={demoVozLoading}
               />
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-9 gap-2 text-zinc-400"
+                  onClick={() => setDialogoProyectos(true)}
+                >
+                  <FolderOpen className="h-4 w-4 text-amber-400/80" aria-hidden />
+                  Abrir un proyecto guardado…
+                </Button>
+              </div>
             </motion.section>
           )}
 
@@ -664,13 +1184,34 @@ export default function Page() {
                           onStop={stop}
                           onSeek={seek}
                         />
-                        {!sourceReady && sourceKind === "user" && (
+                        {!sourceReady && !sourceMissing && sourceUrl && (
                           <p className="pt-2 text-[11px] text-zinc-500">
-                            Recargaste la página: el análisis está restaurado
-                            desde el caché local, pero para reproducir audio
-                            pulsa «Volver a analizar» y re-selecciona el
-                            archivo.
+                            Cargando el audio…
                           </p>
+                        )}
+                        {sourceMissing && sourceKind === "user" && (
+                          <div className="mt-2 space-y-2 rounded-lg border border-amber-800/50 bg-amber-950/10 p-3">
+                            <p className="flex items-center gap-1.5 text-xs font-semibold text-amber-200">
+                              <FileUp className="h-3.5 w-3.5" aria-hidden />
+                              Falta el audio original en esta sesión
+                            </p>
+                            <p className="text-[11px] leading-relaxed text-zinc-500">
+                              El proyecto y su análisis están restaurados, pero
+                              para reproducir, transcribir o exportar hay que
+                              re-adjuntar el archivo original — como Camtasia
+                              re-engancha sus medios al abrir un proyecto
+                              movido de sitio.
+                            </p>
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              className="h-8 gap-1.5"
+                              onClick={() => readjuntarRef.current?.click()}
+                            >
+                              <FileUp className="h-3.5 w-3.5" aria-hidden />
+                              Re-adjuntar el audio
+                            </Button>
+                          </div>
                         )}
                       </CardContent>
                     </Card>
@@ -1075,6 +1616,47 @@ export default function Page() {
         </AnimatePresence>
       </main>
 
+      {/* entrada oculta para re-adjuntar el audio original */}
+      <input
+        ref={readjuntarRef}
+        type="file"
+        accept={ACCEPT_AUDIO}
+        className="sr-only"
+        aria-label="Re-adjuntar el audio original"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          e.target.value = "";
+          if (f) handleReadjuntar(f);
+        }}
+      />
+
+      {/* diálogos de proyectos guardados (estilo Camtasia) */}
+      <GuardarDialog
+        key={`guardar-${dialogoGuardar}`}
+        open={dialogoGuardar}
+        onOpenChange={(v) => setDialogoGuardar(v)}
+        nombreInicial={nombreInicialProyecto}
+        proyecto={proyecto}
+        guardando={guardando}
+        descargando={descargando}
+        error={errorGuardar}
+        puedeGuardar={puedeGuardar}
+        onGuardar={(nombre, comoCopia) =>
+          void guardarProyecto(nombre, comoCopia)
+        }
+        onDescargar={(nombre) => void descargarBsproj(nombre)}
+      />
+
+      <ProyectosDialog
+        open={dialogoProyectos}
+        onOpenChange={setDialogoProyectos}
+        onAbrir={(id) => void abrirProyectoServidor(id)}
+        onImportar={(f) => void importarBsproj(f)}
+        onNuevo={() => {
+          if (confirmarDescartar()) resetAll();
+        }}
+      />
+
       {/* Elemento de audio siempre montado (los efectos conectan src y
           eventos desde el primer render) */}
       <audio ref={audioRef} id="audio-principal" preload="metadata" className="hidden">
@@ -1095,7 +1677,8 @@ export default function Page() {
             )}
             <span>
               Bloques ≤ 5 min · RAM acotada · Fase 1-2 locales/IA · Fases 3-6:
-              música CC0 propia, mezcla y export en el navegador
+              música CC0 + la tuya, mezcla y export en el navegador ·
+              proyectos guardables y reabribles
             </span>
           </span>
         </div>
