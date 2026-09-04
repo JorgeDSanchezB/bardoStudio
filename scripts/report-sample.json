@@ -1,0 +1,94 @@
+{
+  "proyecto": {
+    "nombre": "narracion-voz-demo.wav",
+    "archivo": "narracion-voz-demo.wav",
+    "duracionSec": 176.8,
+    "formato": "WAV · 24000 Hz · 1 canal",
+    "fecha": "2026-02-14T12:00:00-05:00"
+  },
+  "resumen": {
+    "generadoEn": "2026-02-14T12:52:00-05:00",
+    "herramienta": "Bardo Studio"
+  },
+  "dramaturgia": {
+    "escenas": 12,
+    "mediaTension": 49,
+    "picoTension": 75,
+    "corregidas": 1,
+    "motorEmocion": "llm+heuristica",
+    "bloques": 1,
+    "frases": 30,
+    "caracteres": 2500
+  },
+  "curva": [
+    { "n": 1,  "inicio": 0,     "fin": 15.2,  "tension": 15, "animo": "calma",    "corregido": false },
+    { "n": 2,  "inicio": 15.2,  "fin": 29.6,  "tension": 22, "animo": "calma",    "corregido": false },
+    { "n": 3,  "inicio": 29.6,  "fin": 44.1,  "tension": 38, "animo": "misterio", "corregido": false },
+    { "n": 4,  "inicio": 44.1,  "fin": 58.7,  "tension": 45, "animo": "misterio", "corregido": false },
+    { "n": 5,  "inicio": 58.7,  "fin": 72.9,  "tension": 53, "animo": "tension",  "corregido": false },
+    { "n": 6,  "inicio": 72.9,  "fin": 87.3,  "tension": 60, "animo": "tension",  "corregido": true },
+    { "n": 7,  "inicio": 87.3,  "fin": 101.5, "tension": 63, "animo": "batalla",  "corregido": false },
+    { "n": 8,  "inicio": 101.5, "fin": 115.8, "tension": 68, "animo": "batalla",  "corregido": false },
+    { "n": 9,  "inicio": 115.8, "fin": 129.9, "tension": 75, "animo": "victoria", "corregido": false },
+    { "n": 10, "inicio": 129.9, "fin": 143.7, "tension": 70, "animo": "victoria", "corregido": false },
+    { "n": 11, "inicio": 143.7, "fin": 159.2, "tension": 44, "animo": "calma",    "corregido": false },
+    { "n": 12, "inicio": 159.2, "fin": 176.8, "tension": 34, "animo": "calma",    "corregido": false }
+  ],
+  "musica": {
+    "nCambiosPista": 6,
+    "pistasUsadas": [
+      "calma-aposento",
+      "misterio-runas",
+      "tension-umbral",
+      "tension-escalada",
+      "batalla-acero",
+      "victoria-alba"
+    ],
+    "asignaciones": [
+      { "escenaN": 1,  "inicio": 0,     "fin": 15.2,  "animo": "calma",    "tension": 15, "pistaId": "calma-aposento",   "titulo": "Aposento del Descanso", "origen": "auto" },
+      { "escenaN": 2,  "inicio": 15.2,  "fin": 29.6,  "animo": "calma",    "tension": 22, "pistaId": "calma-aposento",   "titulo": "Aposento del Descanso", "origen": "auto" },
+      { "escenaN": 3,  "inicio": 29.6,  "fin": 44.1,  "animo": "misterio", "tension": 38, "pistaId": "misterio-runas",   "titulo": "Runas en la Penumbra",  "origen": "auto" },
+      { "escenaN": 4,  "inicio": 44.1,  "fin": 58.7,  "animo": "misterio", "tension": 45, "pistaId": "misterio-runas",   "titulo": "Runas en la Penumbra",  "origen": "auto" },
+      { "escenaN": 5,  "inicio": 58.7,  "fin": 72.9,  "animo": "tension",  "tension": 53, "pistaId": "tension-umbral",   "titulo": "Umbral de la Duda",     "origen": "auto" },
+      { "escenaN": 6,  "inicio": 72.9,  "fin": 87.3,  "animo": "tension",  "tension": 60, "pistaId": "tension-escalada", "titulo": "Escalada Inminente",    "origen": "manual" },
+      { "escenaN": 7,  "inicio": 87.3,  "fin": 101.5, "animo": "batalla",  "tension": 63, "pistaId": "batalla-acero",    "titulo": "Acero y Trueno",        "origen": "auto" },
+      { "escenaN": 8,  "inicio": 101.5, "fin": 115.8, "animo": "batalla",  "tension": 68, "pistaId": "batalla-acero",    "titulo": "Acero y Trueno",        "origen": "auto" },
+      { "escenaN": 9,  "inicio": 115.8, "fin": 129.9, "animo": "victoria", "tension": 75, "pistaId": "victoria-alba",    "titulo": "Alba Dorada",           "origen": "auto" },
+      { "escenaN": 10, "inicio": 129.9, "fin": 143.7, "animo": "victoria", "tension": 70, "pistaId": "victoria-alba",    "titulo": "Alba Dorada",           "origen": "auto" },
+      { "escenaN": 11, "inicio": 143.7, "fin": 159.2, "animo": "calma",    "tension": 44, "pistaId": "calma-aposento",   "titulo": "Aposento del Descanso", "origen": "auto" },
+      { "escenaN": 12, "inicio": 159.2, "fin": 176.8, "animo": "calma",    "tension": 34, "pistaId": "calma-aposento",   "titulo": "Aposento del Descanso", "origen": "auto" }
+    ]
+  },
+  "mezcla": {
+    "nivelMusicaDb": -18,
+    "rangoDinamicoDb": 6,
+    "profundidadDuckingDb": 10,
+    "ataqueMs": 120,
+    "liberacionMs": 700,
+    "crossfadeSeg": 3,
+    "hincharSilenciosDb": 6,
+    "bloques": 5,
+    "tiempoConMusicaSeg": 170
+  },
+  "edicion": {
+    "ediciones": 3,
+    "detalle": "2 cortes de silencio, 1 cambio manual de pista"
+  },
+  "exportacion": {
+    "formato": "WAV 16-bit · 44100 Hz · estéreo",
+    "normalizado": true,
+    "bytes": 31187520,
+    "rmsDb": -19.4,
+    "picoDb": -1.0,
+    "stems": true,
+    "colaFinalSeg": 3
+  },
+  "auditoria": [
+    { "fase": 1, "titulo": "Ingestión y análisis",        "aprobadaEn": "2026-02-14T12:05:00-05:00" },
+    { "fase": 2, "titulo": "Transcripción y tensión",     "aprobadaEn": "2026-02-14T12:18:00-05:00" },
+    { "fase": 3, "titulo": "Gestión de música",           "aprobadaEn": "2026-02-14T12:26:00-05:00" },
+    { "fase": 4, "titulo": "Mezcla automática",           "aprobadaEn": "2026-02-14T12:33:00-05:00" },
+    { "fase": 5, "titulo": "Editor de mezcla",            "aprobadaEn": "2026-02-14T12:47:00-05:00" },
+    { "fase": 6, "titulo": "Exportación y reporte",       "aprobadaEn": null }
+  ]
+}

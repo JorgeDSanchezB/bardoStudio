@@ -1,0 +1,564 @@
+   470→    Math.ceil(
+   471→      durationSec /
+   472→        (fase2.configFase2?.transcripcion.bloqueSegundos ??
+   473→          FASE2_CONFIG_DEFECTO.transcripcion.bloqueSegundos)
+   474→    )
+   475→  );
+   476→
+   477→  return (
+   478→    <div className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100">
+   479→      {/* ---------------- cabecera ---------------- */}
+   480→      <header className="sticky top-0 z-40 border-b border-zinc-800/80 bg-zinc-950/85 backdrop-blur">
+   481→        <div className="mx-auto flex w-full max-w-6xl items-center gap-3 px-4 py-3 sm:px-6 lg:px-8">
+   482→          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-500/15 text-amber-400">
+   483→            <AudioWaveform className="h-5 w-5" aria-hidden />
+   484→          </span>
+   485→          <div className="min-w-0">
+   486→            <h1 className="truncate text-sm font-bold tracking-wide sm:text-base">
+   487→              Bardo Studio
+   488→            </h1>
+   489→            <p className="hidden text-[11px] text-zinc-500 sm:block">
+   490→              Musicalización auditable de narraciones · D&amp;D y audiolibros
+   491→            </p>
+   492→          </div>
+   493→          <div className="ms-auto flex items-center gap-2">
+   494→            <Badge
+   495→              variant="outline"
+   496→              className="gap-1 border-emerald-800/60 text-[10px] text-emerald-300"
+   497→            >
+   498→              <ShieldCheck className="h-3 w-3" /> Fase 1 en tu navegador
+   499→            </Badge>
+   500→            <Badge variant="outline" className="text-[10px] text-zinc-400">
+   501→              Fase {status === "approved" ? 2 : 1} / 6
+   502→            </Badge>
+   503→          </div>
+   504→        </div>
+   505→      </header>
+   506→
+   507→      {/* ---------------- contenido ---------------- */}
+   508→      <main className="mx-auto w-full max-w-6xl flex-1 space-y-5 px-4 pt-5 pb-10 sm:px-6 lg:px-8">
+   509→        <PhaseStepper
+   510→          phase1Status={status}
+   511→          phase2Status={
+   512→            status === "approved"
+   513→              ? fase2.status === "error"
+   514→                ? "review"
+   515→                : fase2.status
+   516→              : "locked"
+   517→          }
+   518→        />
+   519→
+   520→        <AnimatePresence mode="wait">
+   521→          {showUpload && (
+   522→            <motion.section
+   523→              key="upload"
+   524→              initial={{ opacity: 0, y: 8 }}
+   525→              animate={{ opacity: 1, y: 0 }}
+   526→              exit={{ opacity: 0, y: -8 }}
+   527→              className="space-y-5"
+   528→            >
+   529→              <div className="space-y-2 pt-2">
+   530→                <h2 className="text-xl font-bold sm:text-2xl">
+   531→                  Fase 1 · Ingestión y análisis visual
+   532→                </h2>
+   533→                <p className="max-w-3xl text-sm leading-relaxed text-zinc-400">
+   534→                  Carga la narración de tu sesión: verás su{" "}
+   535→                  <strong className="text-zinc-200">forma de onda</strong>, los{" "}
+   536→                  <strong className="text-rose-300">silencios</strong> (pausas
+   537→                  ≥ 2 s) marcados en la línea de tiempo, y podrás ajustar el
+   538→                  umbral antes de aprobar. El audio se procesa{" "}
+   539→                  <strong className="text-zinc-200">
+   540→                    por bloques en tu propio navegador
+   541→                  </strong>{" "}
+   542→                  — la Fase 1 no sube nada a internet.
+   543→                </p>
+   544→              </div>
+   545→              <UploadPanel
+   546→                onFile={handleFile}
+   547→                onDemo={loadDemo}
+   548→                demoLoading={demoLoading}
+   549→                onDemoVoz={cargarDemoVoz}
+   550→                demoVozLoading={demoVozLoading}
+   551→              />
+   552→            </motion.section>
+   553→          )}
+   554→
+   555→          {status === "analyzing" && progress && fileMeta && (
+   556→            <motion.section
+   557→              key="analyzing"
+   558→              initial={{ opacity: 0, y: 8 }}
+   559→              animate={{ opacity: 1, y: 0 }}
+   560→              exit={{ opacity: 0, y: -8 }}
+   561→            >
+   562→              <AnalysisProgress
+   563→                fileName={fileMeta.name}
+   564→                progress={progress}
+   565→                analysis={analysis}
+   566→                onCancel={() => {
+   567→                  cancelRef.current = true;
+   568→                }}
+   569→              />
+   570→            </motion.section>
+   571→          )}
+   572→
+   573→          {(status === "review" ||
+   574→            status === "approved" ||
+   575→            status === "error") &&
+   576→            fileMeta && (
+   577→              <motion.section
+   578→                key="workspace"
+   579→                initial={{ opacity: 0, y: 8 }}
+   580→                animate={{ opacity: 1, y: 0 }}
+   581→                exit={{ opacity: 0, y: -8 }}
+   582→                className="space-y-5"
+   583→              >
+   584→                {status === "error" && error && (
+   585→                  <Alert variant="destructive">
+   586→                    <AlertTriangle className="h-4 w-4" />
+   587→                    <AlertTitle>Error durante el análisis</AlertTitle>
+   588→                    <AlertDescription>
+   589→                      {error} — Prueba con WAV o recodifica el archivo y vuelve
+   590→                      a intentarlo.
+   591→                    </AlertDescription>
+   592→                  </Alert>
+   593→                )}
+   594→
+   595→                {!analysis && <RestoreCard onReanalyze={reanalyze} isDemo={sourceKind === "demo"} />}
+   596→
+   597→                {analysis && (
+   598→                  <>
+   599→                    {/* tarjeta de transporte */}
+   600→                    <Card className="border-zinc-800 bg-zinc-950/60">
+   601→                      <CardContent className="p-4">
+   602→                        <TransportBar
+   603→                          playing={playing}
+   604→                          playheadSec={playheadSec}
+   605→                          durationSec={durationSec}
+   606→                          sourceReady={sourceReady}
+   607→                          silences={silences}
+   608→                          onTogglePlay={togglePlay}
+   609→                          onStop={stop}
+   610→                          onSeek={seek}
+   611→                        />
+   612→                        {!sourceReady && sourceKind === "user" && (
+   613→                          <p className="pt-2 text-[11px] text-zinc-500">
+   614→                            Recargaste la página: el análisis está restaurado
+   615→                            desde el caché local, pero para reproducir audio
+   616→                            pulsa «Volver a analizar» y re-selecciona el
+   617→                            archivo.
+   618→                          </p>
+   619→                        )}
+   620→                      </CardContent>
+   621→                    </Card>
+   622→
+   623→                    {/* línea de tiempo */}
+   624→                    <Card className="border-zinc-800 bg-zinc-950/60">
+   625→                      <CardContent className="p-4">
+   626→                        <WaveformTimeline
+   627→                          analysis={analysis}
+   628→                          silences={silences}
+   629→                          durationSec={durationSec}
+   630→                          playheadSec={playheadSec}
+   631→                          playing={playing}
+   632→                          thresholdDb={thresholds.dbThreshold}
+   633→                          onSeek={seek}
+   634→                        />
+   635→                      </CardContent>
+   636→                    </Card>
+   637→
+   638→                    {/* umbrales + tabla */}
+   639→                    <div className="grid gap-4 lg:grid-cols-[minmax(300px,380px)_1fr]">
+   640→                      <ThresholdPanel
+   641→                        thresholds={thresholds}
+   642→                        defaults={
+   643→                          configDefaults ?? {
+   644→                            dbThreshold: -38,
+   645→                            minDurationSec: 2,
+   646→                            mergeGapSec: thresholds.mergeGapSec,
+   647→                          }
+   648→                        }
+   649→                        onChange={(t) => {
+   650→                          useProjectStore.getState().setThresholds(t);
+   651→                          useProjectStore.getState().recomputeSilences();
+   652→                        }}
+   653→                        silences={silences.length}
+   654→                        totalSilenceSec={silenceStats.totalSilenceSec}
+   655→                        speechRatio={silenceStats.speechRatio}
+   656→                        durationSec={durationSec}
+   657→                      />
+   658→                      <SilenceTable
+   659→                        silences={silences}
+   660→                        onSeek={seek}
+   661→                        fileName={fileMeta.name}
+   662→                      />
+   663→                    </div>
+   664→
+   665→                    {/* metadatos del análisis */}
+   666→                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-1 text-[11px] text-zinc-500">
+   667→                      <span>
+   668→                        Archivo:{" "}
+   669→                        <span className="text-zinc-300">{fileMeta.name}</span>
+   670→                      </span>
+   671→                      <span>Tamaño: {formatBytes(fileMeta.size)}</span>
+   672→                      <span>Formato: {formatLabel}</span>
+   673→                      {savedResult && (
+   674→                        <span>
+   675→                          Bloques: {savedResult.totalChunks} ×{" "}
+   676→                          {savedResult.chunkSeconds.toFixed(0)} s
+   677→                        </span>
+   678→                      )}
+   679→                      <span>Duración: {formatDurSmart(durationSec)}</span>
+   680→                    </div>
+   681→
+   682→                    {/* puerta de auditoría */}
+   683→                    <ApprovalGate
+   684→                      approved={status === "approved"}
+   685→                      silences={silences.length}
+   686→                      durationLabel={formatDurSmart(durationSec)}
+   687→                      onApprove={() => useProjectStore.getState().approve()}
+   688→                      onReopen={() => useProjectStore.getState().reopen()}
+   689→                      onReanalyze={reanalyze}
+   690→                    />
+   691→
+   692→                    {/* ============ FASE 2: transcripción + curva de tensión ============ */}
+   693→                    {status === "approved" && (
+   694→                      <section
+   695→                        className="space-y-4"
+   696→                        aria-label="Fase 2: transcripción y curva de tensión"
+   697→                      >
+   698→                        <div className="space-y-1 pt-1">
+   699→                          <h2 className="flex flex-wrap items-center gap-2 text-lg font-bold sm:text-xl">
+   700→                            <AudioLines className="h-5 w-5 text-amber-400" />
+   701→                            Fase 2 · Transcripción y curva de tensión
+   702→                          </h2>
+   703→                          <p className="max-w-3xl text-sm leading-relaxed text-zinc-400">
+   704→                            La narración se transcribe{" "}
+   705→                            <strong className="text-zinc-200">
+   706→                              por bloques ≤ 5 min
+   707→                            </strong>{" "}
+   708→                            cortados en los silencios que aprobaste; cada frase se
+   709→                            alinea con la energía de voz y el motor de IA puntúa
+   710→                            la{" "}
+   711→                            <strong className="text-zinc-200">
+   712→                              tensión 0–100 y el ánimo
+   713→                            </strong>{" "}
+   714→                            de cada escena. Corrige cualquier punto{" "}
+   715→                            <strong className="text-zinc-200">
+   716→                              arrastrándolo
+   717→                            </strong>{" "}
+   718→                            y aprueba para desbloquear la Fase 3.
+   719→                          </p>
+   720→                        </div>
+   721→
+   722→                        {fase2.status === "error" && fase2.error && (
+   723→                          <Alert variant="destructive">
+   724→                            <AlertTriangle className="h-4 w-4" />
+   725→                            <AlertTitle>Error durante la Fase 2</AlertTitle>
+   726→                            <AlertDescription>
+   727→                              {fase2.error} — el progreso por bloques ya guardado
+   728→                              se conserva: pulsa el botón para continuar donde se
+   729→                              quedó.
+   730→                            </AlertDescription>
+   731→                          </Alert>
+   732→                        )}
+   733→
+   734→                        {/* arranque / reanudación */}
+   735→                        {!fase2Listo && !fase2EnCurso && (
+   736→                          <Card className="border-amber-800/40 bg-amber-950/10">
+   737→                            <CardContent className="space-y-3 p-4">
+   738→                              <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-zinc-500">
+   739→                                <span>
+   740→                                  Duración:{" "}
+   741→                                  <span className="text-zinc-300">
+   742→                                    {formatDurSmart(durationSec)}
+   743→                                  </span>
+   744→                                </span>
+   745→                                <span>
+   746→                                  Bloques ≈{" "}
+   747→                                  <span className="text-zinc-300">{bloquesEst}</span>{" "}
+   748→                                  · escenas de{" "}
+   749→                                  <span className="text-zinc-300">
+   750→                                    {fase2.configFase2?.escenaSegundos ??
+   751→                                      FASE2_CONFIG_DEFECTO.escenaSegundos}{" "}
+   752→                                    s
+   753→                                  </span>
+   754→                                </span>
+   755→                                <span>
+   756→                                  Silencios de referencia:{" "}
+   757→                                  <span className="text-zinc-300">
+   758→                                    {silences.length}
+   759→                                  </span>
+   760→                                </span>
+   761→                              </div>
+   762→
+   763→                              {analysis?.format === "decoded" &&
+   764→                                durationSec > 3600 && (
+   765→                                  <p className="flex items-center gap-2 text-[11px] text-amber-300/90">
+   766→                                    <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+   767→                                    Formato comprimido de más de 1 h: para
+   768→                                    transcribir se decodifica el archivo
+   769→                                    completo en memoria. Para narraciones de 3+
+   770→                                    horas usa WAV.
+   771→                                  </p>
+   772→                                )}
+   773→
+   774→                              {!sourceUrl && (
+   775→                                <p className="flex items-center gap-2 text-[11px] text-amber-300/90">
+   776→                                  <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+   777→                                  Tras recargar la página el archivo fuente no
+   778→                                  está disponible: usa «Volver a analizar» y
+   779→                                  re-selecciona el audio para poder transcribir.
+   780→                                </p>
+   781→                              )}
+   782→
+   783→                              <div className="flex flex-wrap items-center gap-2">
+   784→                                <Button
+   785→                                  className="bg-amber-500 font-semibold text-zinc-950 hover:bg-amber-400"
+   786→                                  disabled={!sourceUrl}
+   787→                                  onClick={() => void runFase2(false)}
+   788→                                >
+   789→                                  <Play className="me-1 h-4 w-4" />
+   790→                                  {fase2Reanudable
+   791→                                    ? `Reanudar transcripción (${fase2.bloquesHechos.length} bloques ya listos)`
+   792→                                    : "Iniciar transcripción y análisis"}
+   793→                                </Button>
+   794→                                {fase2Reanudable && (
+   795→                                  <Button
+   796→                                    variant="ghost"
+   797→                                    className="text-zinc-400"
+   798→                                    onClick={rehacerFase2Confirm}
+   799→                                  >
+   800→                                    <RotateCcw className="me-1 h-4 w-4" />
+   801→                                    Rehacer desde cero
+   802→                                  </Button>
+   803→                                )}
+   804→                              </div>
+   805→
+   806→                              <p className="text-[11px] leading-relaxed text-zinc-500">
+   807→                                Cada bloque se guarda al completarse: puedes
+   808→                                cancelar o recargar y reanudar sin repetir
+   809→                                llamadas. La transcripción viaja por sub-bloques
+   810→                                ≤ 28 s al motor ASR del servicio; el análisis
+   811→                                dramático combina el texto con la energía de voz
+   812→                                (pesos editables en config.json).
+   813→                              </p>
+   814→                            </CardContent>
+   815→                          </Card>
+   816→                        )}
+   817→
+   818→                        {/* en curso */}
+   819→                        {fase2EnCurso && (
+   820→                          <>
+   821→                            {fase2.progreso ? (
+   822→                              <Fase2Progress
+   823→                                progreso={fase2.progreso}
+   824→                                reanudadas={fase2.segmentos.length}
+   825→                                duracionTotalSec={durationSec}
+   826→                                onCancel={() => {
+   827→                                  cancelFase2Ref.current = true;
+   828→                                }}
+   829→                              />
+   830→                            ) : (
+   831→                              <Card className="border-zinc-800 bg-zinc-950/60">
+   832→                                <CardContent className="flex items-center gap-3 p-4 text-sm text-zinc-400">
+   833→                                  <Loader2 className="h-4 w-4 animate-spin text-amber-400" />
+   834→                                  Preparando la Fase 2…
+   835→                                </CardContent>
+   836→                              </Card>
+   837→                            )}
+   838→                            {fase2.escenas.length > 0 && (
+   839→                              <Card className="border-zinc-800 bg-zinc-950/60">
+   840→                                <CardContent className="p-4">
+   841→                                  <TensionGraph
+   842→                                    escenas={fase2.escenas}
+   843→                                    durationSec={durationSec}
+   844→                                    playheadSec={playheadSec}
+   845→                                    selectedId={escenaSel}
+   846→                                    soloLectura
+   847→                                    onCorregir={() => undefined}
+   848→                                    onSeleccionar={setEscenaSel}
+   849→                                    onSeek={seek}
+   850→                                  />
+   851→                                </CardContent>
+   852→                              </Card>
+   853→                            )}
+   854→                          </>
+   855→                        )}
+   856→
+   857→                        {/* resultados */}
+   858→                        {fase2Listo && (
+   859→                          <>
+   860→                            <Card className="border-zinc-800 bg-zinc-950/60">
+   861→                              <CardContent className="p-4">
+   862→                                <TensionGraph
+   863→                                  escenas={fase2.escenas}
+   864→                                  durationSec={durationSec}
+   865→                                  playheadSec={playheadSec}
+   866→                                  selectedId={escenaSel}
+   867→                                  soloLectura={fase2.status === "approved"}
+   868→                                  onCorregir={(id, v) =>
+   869→                                    useProjectStore
+   870→                                      .getState()
+   871→                                      .corregirTension(id, v)
+   872→                                  }
+   873→                                  onSeleccionar={setEscenaSel}
+   874→                                  onSeek={seek}
+   875→                                  onRestaurar={() =>
+   876→                                    useProjectStore
+   877→                                      .getState()
+   878→                                      .restaurarTensiones()
+   879→                                  }
+   880→                                />
+   881→                              </CardContent>
+   882→                            </Card>
+   883→
+   884→                            <Tabs defaultValue="escenas">
+   885→                              <TabsList>
+   886→                                <TabsTrigger value="escenas">
+   887→                                  Escenas y tensión
+   888→                                </TabsTrigger>
+   889→                                <TabsTrigger value="transcripcion">
+   890→                                  Transcripción
+   891→                                </TabsTrigger>
+   892→                              </TabsList>
+   893→                              <TabsContent value="escenas">
+   894→                                <EscenasTable
+   895→                                  escenas={fase2.escenas}
+   896→                                  selectedId={escenaSel}
+   897→                                  fileName={fileMeta?.name ?? null}
+   898→                                  onSeleccionar={setEscenaSel}
+   899→                                  onSeek={seek}
+   900→                                  onCorregir={(id, v) =>
+   901→                                    useProjectStore
+   902→                                      .getState()
+   903→                                      .corregirTension(id, v)
+   904→                                  }
+   905→                                />
+   906→                              </TabsContent>
+   907→                              <TabsContent value="transcripcion">
+   908→                                <TranscriptView
+   909→                                  segmentos={fase2.segmentos}
+   910→                                  fileName={fileMeta?.name ?? null}
+   911→                                  onSeek={seek}
+   912→                                />
+   913→                              </TabsContent>
+   914→                            </Tabs>
+   915→
+   916→                            {fase2.resumen && (
+   917→                              <div className="flex flex-wrap gap-x-4 gap-y-1 px-1 text-[11px] text-zinc-500">
+   918→                                <span>
+   919→                                  Emoción:{" "}
+   920→                                  <span className="text-zinc-300">
+   921→                                    {fase2.resumen.motorEmocion}
+   922→                                  </span>
+   923→                                </span>
+   924→                                <span>
+   925→                                  Bloques: {fase2.resumen.bloques} · llamadas
+   926→                                  ASR: {fase2.resumen.solicitudesAsr}
+   927→                                </span>
+   928→                                <span>
+   929→                                  Frases: {fase2.resumen.segmentos} · escenas:{" "}
+   930→                                  {fase2.resumen.escenas} ·{" "}
+   931→                                  {fase2.resumen.caracteres.toLocaleString(
+   932→                                    "es"
+   933→                                  )}{" "}
+   934→                                  caracteres
+   935→                                </span>
+   936→                              </div>
+   937→                            )}
+   938→
+   939→                            {fase2.avisos.length > 0 && (
+   940→                              <Alert className="border-amber-800/50 bg-amber-950/20 text-amber-200">
+   941→                                <AlertTriangle className="h-4 w-4" />
+   942→                                <AlertTitle>Avisos del análisis</AlertTitle>
+   943→                                <AlertDescription>
+   944→                                  <ul className="list-disc space-y-0.5 ps-4">
+   945→                                    {fase2.avisos.map((av, i) => (
+   946→                                      <li key={i}>{av.texto}</li>
+   947→                                    ))}
+   948→                                  </ul>
+   949→                                </AlertDescription>
+   950→                              </Alert>
+   951→                            )}
+   952→
+   953→                            <Fase2Gate
+   954→                              approved={fase2.status === "approved"}
+   955→                              escenas={fase2.escenas.length}
+   956→                              corregidas={fase2Corregidas}
+   957→                              tensionMedia={fase2Media}
+   958→                              picoTension={fase2Pico}
+   959→                              onApprove={() =>
+   960→                                useProjectStore.getState().aprobarFase2()
+   961→                              }
+   962→                              onReopen={() =>
+   963→                                useProjectStore.getState().reabrirFase2()
+   964→                              }
+   965→                              onRehacer={rehacerFase2Confirm}
+   966→                            />
+   967→                          </>
+   968→                        )}
+   969→                      </section>
+   970→                    )}
+   971→                  </>
+   972→                )}
+   973→
+   974→                <div className="flex flex-col gap-3 sm:flex-row">
+   975→                  {status === "approved" && (
+   976→                    <Card className="h-fit border-zinc-800/80 bg-zinc-900/30 sm:max-w-xs">
+   977→                      <CardHeader className="pb-1">
+   978→                        <CardTitle className="text-xs text-zinc-400">
+   979→                          Estado del pipeline
+   980→                        </CardTitle>
+   981→                      </CardHeader>
+   982→                      <CardContent className="pb-4">
+   983→                        <p className="text-[11px] leading-relaxed text-zinc-500">
+   984→                          Fase 1 aprobada y bloqueada. Fase 2 activa más arriba;
+   985→                          las fases 3–6 se entregan tras cada aprobación en el
+   986→                          chat.
+   987→                        </p>
+   988→                        <Button
+   989→                          variant="ghost"
+   990→                          size="sm"
+   991→                          className="mt-3 h-8 gap-1 text-[11px] text-rose-300/80 hover:text-rose-300"
+   992→                          onClick={resetAll}
+   993→                        >
+   994→                          <Trash2 className="h-3.5 w-3.5" />
+   995→                          Descartar proyecto
+   996→                        </Button>
+   997→                      </CardContent>
+   998→                    </Card>
+   999→                  )}
+  1000→                </div>
+  1001→              </motion.section>
+  1002→            )}
+  1003→        </AnimatePresence>
+  1004→      </main>
+  1005→
+  1006→      {/* Elemento de audio siempre montado (los efectos conectan src y
+  1007→          eventos desde el primer render) */}
+  1008→      <audio ref={audioRef} preload="metadata" className="hidden">
+  1009→        <track kind="captions" />
+  1010→      </audio>
+  1011→
+  1012→      {/* ---------------- pie pegajoso ---------------- */}
+  1013→      <footer className="mt-auto border-t border-zinc-800/80 bg-zinc-950/95">
+  1014→        <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 text-[11px] text-zinc-500 sm:px-6 lg:px-8">
+  1015→          <span>
+  1016→            Bardo Studio · pipeline auditable de musicalización de narraciones
+  1017→          </span>
+  1018→          <span className="ms-auto flex flex-wrap items-center gap-x-3 gap-y-1">
+  1019→            {fileMeta && (
+  1020→              <span className="max-w-[180px] truncate text-zinc-400">
+  1021→                {fileMeta.name}
+  1022→              </span>
+  1023→            )}
+  1024→            <span>
+  1025→              Bloques ≤ 5 min · RAM acotada · Fase 1 local · Fase 2 por IA
+  1026→            </span>
+  1027→          </span>
+  1028→        </div>
+  1029→      </footer>
+  1030→    </div>
+  1031→  );
+  1032→}
+  1033→

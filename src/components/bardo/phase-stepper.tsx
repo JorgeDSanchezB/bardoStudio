@@ -11,7 +11,6 @@ import {
   Lock,
   CheckCircle2,
 } from "lucide-react";
-import type { Phase1Status } from "@/store/project";
 
 export const PHASES = [
   {
@@ -23,13 +22,13 @@ export const PHASES = [
   {
     n: 2,
     title: "Transcripción y tensión",
-    desc: "Whisper por bloques + curva",
+    desc: "IA por bloques + curva",
     icon: AudioLines,
   },
   {
     n: 3,
     title: "Gestión de música",
-    desc: "CC0 automática por mood",
+    desc: "Biblioteca CC0 por ánimo",
     icon: Music2,
   },
   {
@@ -40,96 +39,94 @@ export const PHASES = [
   },
   {
     n: 5,
-    title: "Editor tipo Camtasia",
-    desc: "Cuchilla, arrastre, marcadores",
+    title: "Editor de mezcla",
+    desc: "Cuchilla, arrastre, medidores",
     icon: Scissors,
   },
   {
     n: 6,
     title: "Exportación y reporte",
-    desc: "MP3/WAV + informe PDF",
+    desc: "WAV + informe PDF",
     icon: FileDown,
   },
 ] as const;
 
-/** Estado visual de la Fase 2 en el stepper. "locked" por defecto (compat). */
-export type Phase2StepperStatus =
+/** Estado visual de cada fase en el stepper. */
+export type StepStatus =
   | "locked"
   | "idle"
   | "running"
   | "review"
   | "approved";
 
+/** Estados de las 6 fases, en orden (fase 1..6). */
+export type EstadosFases = [StepStatus, StepStatus, StepStatus, StepStatus, StepStatus, StepStatus];
+
 interface PhaseStepperProps {
-  phase1Status: Phase1Status;
-  phase2Status?: Phase2StepperStatus;
+  statuses: EstadosFases;
 }
 
-export function PhaseStepper({
-  phase1Status,
-  phase2Status = "locked",
-}: PhaseStepperProps) {
-  const done = phase1Status === "approved";
+export function PhaseStepper({ statuses }: PhaseStepperProps) {
+  // una fase está bloqueada si la anterior no está aprobada
+  const locked: boolean[] = statuses.map(
+    (st, i) => i > 0 && statuses[i - 1] !== "approved"
+  );
+  // activa = primera no aprobada y no bloqueada
+  const idxActiva = statuses.findIndex(
+    (st, i) => st !== "approved" && !locked[i]
+  );
+  const todoAprobado = statuses.every((st) => st === "approved");
+
   return (
     <nav aria-label="Progreso del pipeline" className="w-full">
       <ol className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-        {PHASES.map((p) => {
-          const active = p.n === 1 && !done;
-          const ok = (p.n === 1 && done) || (p.n === 2 && phase2Status === "approved");
-          const f2 =
-            p.n === 2 && phase2Status !== "locked"
-              ? phase2Status
-              : null;
-          const f2Running = f2 === "running" || f2 === "review";
-          const f2Idle = f2 === "idle";
-          const locked = p.n > 1 && (p.n !== 2 || phase2Status === "locked");
+        {PHASES.map((p, i) => {
+          const st = statuses[i];
+          const ok = st === "approved";
+          const active = i === idxActiva && !todoAprobado;
+          const running = st === "running" || st === "review";
+          const idle = st === "idle" && !locked[i];
           const Icon = p.icon;
           return (
             <li
               key={p.n}
               className={[
                 "flex items-center gap-2.5 rounded-lg border p-2.5",
-                active
+                active || running
                   ? "border-amber-600/60 bg-amber-950/30"
                   : ok
                     ? "border-emerald-800/50 bg-emerald-950/20"
-                    : f2Running
-                      ? "border-amber-600/60 bg-amber-950/30"
-                      : f2Idle
-                        ? "border-amber-700/40 bg-zinc-900/40"
-                        : "border-zinc-800/80 bg-zinc-900/40 opacity-70",
+                    : idle
+                      ? "border-amber-700/40 bg-zinc-900/40"
+                      : "border-zinc-800/80 bg-zinc-900/40 opacity-70",
               ].join(" ")}
             >
               <span
                 className={[
                   "flex h-8 w-8 shrink-0 items-center justify-center rounded-md",
-                  active
+                  active || running
                     ? "bg-amber-500/20 text-amber-300"
                     : ok
                       ? "bg-emerald-500/15 text-emerald-300"
-                      : f2Running
-                        ? "bg-amber-500/20 text-amber-300"
-                        : f2Idle
-                          ? "bg-amber-900/30 text-amber-300/70"
-                          : "bg-zinc-800 text-zinc-500",
+                      : idle
+                        ? "bg-amber-900/30 text-amber-300/70"
+                        : "bg-zinc-800 text-zinc-500",
                 ].join(" ")}
               >
                 {ok ? (
                   <CheckCircle2 className="h-4 w-4" />
-                ) : locked ? (
+                ) : locked[i] ? (
                   <Lock className="h-3.5 w-3.5" />
                 ) : (
                   <Icon
-                    className={
-                      f2 === "running" ? "h-4 w-4 animate-pulse" : "h-4 w-4"
-                    }
+                    className={st === "running" ? "h-4 w-4 animate-pulse" : "h-4 w-4"}
                   />
                 )}
               </span>
               <div className="min-w-0">
                 <p className="flex items-center gap-1 truncate text-[11px] font-semibold text-zinc-200">
                   Fase {p.n}
-                  {(active || f2Running) && (
+                  {(active || running) && (
                     <Badge className="h-4 bg-amber-500 px-1 text-[9px] font-bold text-zinc-950">
                       ACTIVA
                     </Badge>

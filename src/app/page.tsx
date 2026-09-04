@@ -21,7 +21,7 @@ import { analyzeAudio } from "@/lib/audio/analyze";
 import type { AnalysisOptions } from "@/lib/audio/types";
 import { loadAnalysis, deleteAnalysis } from "@/lib/idb";
 import { clamp, formatDurSmart, formatBytes } from "@/lib/format";
-import { PhaseStepper } from "@/components/bardo/phase-stepper";
+import { PhaseStepper, type EstadosFases } from "@/components/bardo/phase-stepper";
 import { UploadPanel } from "@/components/bardo/upload-panel";
 import { AnalysisProgress } from "@/components/bardo/analysis-progress";
 import { WaveformTimeline } from "@/components/bardo/waveform-timeline";
@@ -35,6 +35,11 @@ import { EscenasTable } from "@/components/bardo/escenas-table";
 import { TranscriptView } from "@/components/bardo/transcript-view";
 import { Fase2Progress } from "@/components/bardo/fase2-progress";
 import { Fase2Gate } from "@/components/bardo/fase2-gate";
+import { Fase3Seccion } from "@/components/bardo/fase3-seccion";
+import { Fase4Seccion } from "@/components/bardo/fase4-seccion";
+import { Fase5Seccion } from "@/components/bardo/fase5-seccion";
+import { Fase6Seccion } from "@/components/bardo/fase6-seccion";
+import { obtenerControlMotor } from "@/lib/fase5/registro-motor";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ejecutarFase2 } from "@/lib/fase2/pipeline";
 import { FASE2_CONFIG_DEFECTO } from "@/lib/fase2/types";
@@ -54,6 +59,10 @@ export default function Page() {
   const playheadSec = useProjectStore((s) => s.playheadSec);
   const configDefaults = useProjectStore((s) => s.configDefaults);
   const fase2 = useProjectStore((s) => s.fase2);
+  const fase3 = useProjectStore((s) => s.fase3);
+  const fase4 = useProjectStore((s) => s.fase4);
+  const fase5 = useProjectStore((s) => s.fase5);
+  const fase6 = useProjectStore((s) => s.fase6);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const objectUrlRef = useRef<string | null>(null);
@@ -129,6 +138,9 @@ export default function Page() {
           };
           analisis?: Partial<AnalysisOptions>;
           fase2?: unknown;
+          fase3?: unknown;
+          fase4?: unknown;
+          fase6?: unknown;
         };
         useProjectStore.getState().seedFromConfig(c);
       })
@@ -227,19 +239,25 @@ export default function Page() {
     useProjectStore.getState().setPlayhead(0);
   }, []);
 
-  // barra espaciadora = play/pausa (como en un DAW)
+  // barra espaciadora = play/pausa (motor de mezcla en Fase 5 o audio de Fase 1)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.code !== "Space") return;
       const target = e.target as HTMLElement | null;
       if (
         target &&
-        (["BUTTON", "INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) ||
+        (['BUTTON', "INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) ||
           target.getAttribute("role") === "slider" ||
-          target.getAttribute("role") === "checkbox")
+          target.getAttribute("role") === "checkbox" ||
+          target.getAttribute("role") === "switch")
       )
         return;
       e.preventDefault();
+      const control = obtenerControlMotor();
+      if (control) {
+        control.toggle();
+        return;
+      }
       togglePlay();
     };
     window.addEventListener("keydown", onKey);
@@ -442,6 +460,52 @@ export default function Page() {
 
   // ---------- render ----------
   const showUpload = !hydrated || status === "empty";
+
+  // estados del stepper (6 fases)
+  const stepStatuses: EstadosFases = [
+    status === "approved"
+      ? "approved"
+      : status === "analyzing"
+        ? "running"
+        : status === "review" || status === "error"
+          ? "review"
+          : "idle",
+    status === "approved"
+      ? fase2.status === "error"
+        ? "review"
+        : fase2.status === "running"
+          ? "running"
+          : fase2.status === "approved"
+            ? "approved"
+            : fase2.escenas.length > 0 || fase2.bloquesHechos.length > 0
+              ? "review"
+              : "idle"
+      : "locked",
+    fase2.status === "approved"
+      ? fase3.status === "error"
+        ? "review"
+        : fase3.status
+      : "locked",
+    fase3.status === "approved"
+      ? fase4.status === "error"
+        ? "review"
+        : fase4.status
+      : "locked",
+    fase4.status === "approved"
+      ? fase5.status === "error"
+        ? "review"
+        : fase5.status
+      : "locked",
+    fase5.status === "approved"
+      ? fase6.status === "error"
+        ? "review"
+        : fase6.status
+      : "locked",
+  ];
+  const faseActiva = (() => {
+    const idx = stepStatuses.findIndex((st) => st !== "approved");
+    return idx < 0 ? 6 : idx + 1;
+  })();
   const formatLabel =
     savedResult?.format === "wav"
       ? `WAV · ${analysis?.sampleRate.toLocaleString("es") ?? "?"} Hz · ${
@@ -495,10 +559,10 @@ export default function Page() {
               variant="outline"
               className="gap-1 border-emerald-800/60 text-[10px] text-emerald-300"
             >
-              <ShieldCheck className="h-3 w-3" /> Fase 1 en tu navegador
+              <ShieldCheck className="h-3 w-3" /> 6 fases auditables
             </Badge>
             <Badge variant="outline" className="text-[10px] text-zinc-400">
-              Fase {status === "approved" ? 2 : 1} / 6
+              Fase {faseActiva} / 6
             </Badge>
           </div>
         </div>
@@ -506,16 +570,7 @@ export default function Page() {
 
       {/* ---------------- contenido ---------------- */}
       <main className="mx-auto w-full max-w-6xl flex-1 space-y-5 px-4 pt-5 pb-10 sm:px-6 lg:px-8">
-        <PhaseStepper
-          phase1Status={status}
-          phase2Status={
-            status === "approved"
-              ? fase2.status === "error"
-                ? "review"
-                : fase2.status
-              : "locked"
-          }
-        />
+        <PhaseStepper statuses={stepStatuses} />
 
         <AnimatePresence mode="wait">
           {showUpload && (
@@ -959,14 +1014,30 @@ export default function Page() {
                               onApprove={() =>
                                 useProjectStore.getState().aprobarFase2()
                               }
-                              onReopen={() =>
-                                useProjectStore.getState().reabrirFase2()
-                              }
+                              onReopen={() => {
+                                if (
+                                  window.confirm(
+                                    "Al reabrir la Fase 2 se reinician las fases 3-6 (asignaciones, mezcla, editor y exportación). ¿Continuar?"
+                                  )
+                                ) {
+                                  useProjectStore.getState().reabrirFase2();
+                                }
+                              }}
                               onRehacer={rehacerFase2Confirm}
                             />
                           </>
                         )}
                       </section>
+                    )}
+
+                    {/* ============ FASES 3-6: música, mezcla, editor, exportación ============ */}
+                    {status === "approved" && fase2.status === "approved" && (
+                      <>
+                        <Fase3Seccion />
+                        <Fase4Seccion />
+                        <Fase5Seccion sourceUrl={sourceUrl} />
+                        <Fase6Seccion sourceUrl={sourceUrl} />
+                      </>
                     )}
                   </>
                 )}
@@ -981,9 +1052,10 @@ export default function Page() {
                       </CardHeader>
                       <CardContent className="pb-4">
                         <p className="text-[11px] leading-relaxed text-zinc-500">
-                          Fase 1 aprobada y bloqueada. Fase 2 activa más arriba;
-                          las fases 3–6 se entregan tras cada aprobación en el
-                          chat.
+                          Fase 1 aprobada y bloqueada. El pipeline continúa más
+                          abajo: música CC0 (3), mezcla automática (4), editor
+                          en vivo (5) y exportación + informe PDF (6). Cada fase
+                          requiere su aprobación explícita.
                         </p>
                         <Button
                           variant="ghost"
@@ -1005,7 +1077,7 @@ export default function Page() {
 
       {/* Elemento de audio siempre montado (los efectos conectan src y
           eventos desde el primer render) */}
-      <audio ref={audioRef} preload="metadata" className="hidden">
+      <audio ref={audioRef} id="audio-principal" preload="metadata" className="hidden">
         <track kind="captions" />
       </audio>
 
@@ -1022,7 +1094,8 @@ export default function Page() {
               </span>
             )}
             <span>
-              Bloques ≤ 5 min · RAM acotada · Fase 1 local · Fase 2 por IA
+              Bloques ≤ 5 min · RAM acotada · Fase 1-2 locales/IA · Fases 3-6:
+              música CC0 propia, mezcla y export en el navegador
             </span>
           </span>
         </div>

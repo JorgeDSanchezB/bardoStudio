@@ -1,7 +1,7 @@
 {
-  "version": 2,
+  "version": 3,
   "nombre": "Bardo Studio — Mapa de Atributos Dinámicos",
-  "descripcion": "Edita este archivo para ajustar umbrales y parámetros SIN tocar el código. El frontend lo consulta en /api/config al arrancar. Fase 2: transcripción, escenas y pesos de emoción.",
+  "descripcion": "Edita este archivo para ajustar umbrales y parámetros SIN tocar el código. El frontend lo consulta en /api/config al arrancar. Fase 2: transcripción/escenas. Fase 3: matching musical. Fase 4: mezcla. Fase 6: exportación.",
   "silencio": {
     "umbralDb": -38,
     "duracionMinimaSeg": 2,
@@ -35,5 +35,23 @@
       "misterio": ["misterio", "sombra", "susurro", "secreto", "extraño", "oscuro", "enigma", "silencio", "desaparece", "invisible", "puerta", "antiguo", "runas", "profecía", "presencia", "niebla", "pergamino", "parpadea", "sombras", "desconocido"],
       "calma": ["descanso", "tranquilo", "paz", "sueño", "suave", "lento", "cena", "fuego", "crepitar", "hogar", "amigo", "risa", "cálido", "noche", "estrellas", "posada", "historias", "copas", "nieve", "sonríen", "canciones", "vino", "descansa"]
     }
+  },
+  "fase3": {
+    "duracionMinBloqueSeg": 40,
+    "penalizacionFatigaMin": 12
+  },
+  "fase4": {
+    "nivelMusicaDb": -18,
+    "rangoDinamicoDb": 6,
+    "profundidadDuckingDb": 10,
+    "ataqueMs": 120,
+    "liberacionMs": 700,
+    "crossfadeSeg": 3,
+    "hincharSilenciosDb": 6
+  },
+  "fase6": {
+    "normalizar": true,
+    "incluirStems": true,
+    "colaFinalSeg": 3
   }
 }
