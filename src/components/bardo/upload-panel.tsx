@@ -11,18 +11,29 @@ import {
   MemoryStick,
   ClipboardCheck,
   FileAudio,
+  Mic,
 } from "lucide-react";
 import { formatBytes } from "@/lib/format";
 
 interface UploadPanelProps {
   onFile: (file: File) => void;
+  /** demo sintética (solo Fase 1: no contiene habla) */
   onDemo: () => void;
   demoLoading: boolean;
+  /** demo con voz real TTS (recomendada: ejercita Fases 1 y 2) */
+  onDemoVoz: () => void;
+  demoVozLoading: boolean;
 }
 
 const ACCEPTED = ".wav,.mp3,.m4a,.ogg,.oga,.flac,.opus,.aac,.webm,audio/*";
 
-export function UploadPanel({ onFile, onDemo, demoLoading }: UploadPanelProps) {
+export function UploadPanel({
+  onFile,
+  onDemo,
+  demoLoading,
+  onDemoVoz,
+  demoVozLoading,
+}: UploadPanelProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -116,23 +127,36 @@ export function UploadPanel({ onFile, onDemo, demoLoading }: UploadPanelProps) {
         </CardContent>
       </Card>
 
-      <div className="flex flex-col items-center gap-2 sm:flex-row sm:justify-center">
+      <div className="flex flex-col items-center gap-2 sm:flex-row sm:flex-wrap sm:justify-center">
         <span className="text-xs text-zinc-500">¿Sin archivo a mano?</span>
         <Button
           variant="secondary"
           size="sm"
           className="h-9 gap-2"
-          onClick={onDemo}
-          disabled={demoLoading}
+          onClick={onDemoVoz}
+          disabled={demoVozLoading || demoLoading}
         >
-          <Sparkles className="h-4 w-4 text-amber-400" />
-          {demoLoading ? "Descargando demo…" : "Cargar narración demo (6 min)"}
+          <Mic className="h-4 w-4 text-amber-400" />
+          {demoVozLoading
+            ? "Descargando demo con voz…"
+            : "Demo con voz real (recomendada)"}
         </Button>
-        <span className="text-[11px] text-zinc-600">
-          {formatBytes(16_140_644)} · 22 050 Hz · silencios incrustados a
-          propósito
-        </span>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-9 gap-2 text-zinc-400"
+          onClick={onDemo}
+          disabled={demoLoading || demoVozLoading}
+        >
+          <Sparkles className="h-4 w-4 text-zinc-500" />
+          {demoLoading ? "Descargando…" : "Demo sintética (solo silencios)"}
+        </Button>
       </div>
+      <p className="text-center text-[11px] leading-relaxed text-zinc-600">
+        Con voz: 3 min · 24 kHz · 5 capítulos con tensión creciente · ejercita
+        las Fases 1 y 2 ({formatBytes(8_487_390)}). Sintética: 6 min · 22 050
+        Hz · silencios incrustados a propósito, sin habla (solo Fase 1).
+      </p>
 
       <div className="grid gap-3 sm:grid-cols-3">
         {[
@@ -148,8 +172,9 @@ export function UploadPanel({ onFile, onDemo, demoLoading }: UploadPanelProps) {
           },
           {
             icon: ShieldCheck,
-            title: "100 % local",
-            desc: "El audio se procesa en tu navegador; no se sube a ningún servidor.",
+            title: "Análisis local",
+            desc:
+              "La Fase 1 se analiza en tu navegador; la Fase 2 usa el motor de IA por bloques.",
           },
         ].map((f) => (
           <div

@@ -52,19 +52,37 @@ export const PHASES = [
   },
 ] as const;
 
+/** Estado visual de la Fase 2 en el stepper. "locked" por defecto (compat). */
+export type Phase2StepperStatus =
+  | "locked"
+  | "idle"
+  | "running"
+  | "review"
+  | "approved";
+
 interface PhaseStepperProps {
   phase1Status: Phase1Status;
+  phase2Status?: Phase2StepperStatus;
 }
 
-export function PhaseStepper({ phase1Status }: PhaseStepperProps) {
+export function PhaseStepper({
+  phase1Status,
+  phase2Status = "locked",
+}: PhaseStepperProps) {
   const done = phase1Status === "approved";
   return (
     <nav aria-label="Progreso del pipeline" className="w-full">
       <ol className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
         {PHASES.map((p) => {
           const active = p.n === 1 && !done;
-          const ok = p.n === 1 && done;
-          const locked = p.n > 1;
+          const ok = (p.n === 1 && done) || (p.n === 2 && phase2Status === "approved");
+          const f2 =
+            p.n === 2 && phase2Status !== "locked"
+              ? phase2Status
+              : null;
+          const f2Running = f2 === "running" || f2 === "review";
+          const f2Idle = f2 === "idle";
+          const locked = p.n > 1 && (p.n !== 2 || phase2Status === "locked");
           const Icon = p.icon;
           return (
             <li
@@ -75,7 +93,11 @@ export function PhaseStepper({ phase1Status }: PhaseStepperProps) {
                   ? "border-amber-600/60 bg-amber-950/30"
                   : ok
                     ? "border-emerald-800/50 bg-emerald-950/20"
-                    : "border-zinc-800/80 bg-zinc-900/40 opacity-70",
+                    : f2Running
+                      ? "border-amber-600/60 bg-amber-950/30"
+                      : f2Idle
+                        ? "border-amber-700/40 bg-zinc-900/40"
+                        : "border-zinc-800/80 bg-zinc-900/40 opacity-70",
               ].join(" ")}
             >
               <span
@@ -85,7 +107,11 @@ export function PhaseStepper({ phase1Status }: PhaseStepperProps) {
                     ? "bg-amber-500/20 text-amber-300"
                     : ok
                       ? "bg-emerald-500/15 text-emerald-300"
-                      : "bg-zinc-800 text-zinc-500",
+                      : f2Running
+                        ? "bg-amber-500/20 text-amber-300"
+                        : f2Idle
+                          ? "bg-amber-900/30 text-amber-300/70"
+                          : "bg-zinc-800 text-zinc-500",
                 ].join(" ")}
               >
                 {ok ? (
@@ -93,13 +119,17 @@ export function PhaseStepper({ phase1Status }: PhaseStepperProps) {
                 ) : locked ? (
                   <Lock className="h-3.5 w-3.5" />
                 ) : (
-                  <Icon className="h-4 w-4" />
+                  <Icon
+                    className={
+                      f2 === "running" ? "h-4 w-4 animate-pulse" : "h-4 w-4"
+                    }
+                  />
                 )}
               </span>
               <div className="min-w-0">
                 <p className="flex items-center gap-1 truncate text-[11px] font-semibold text-zinc-200">
                   Fase {p.n}
-                  {active && (
+                  {(active || f2Running) && (
                     <Badge className="h-4 bg-amber-500 px-1 text-[9px] font-bold text-zinc-950">
                       ACTIVA
                     </Badge>
