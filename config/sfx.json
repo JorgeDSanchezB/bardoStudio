@@ -1,0 +1,343 @@
+{
+  "version": 1,
+  "generadoPor": "scripts/generate-sfx-library.ts (síntesis determinista local)",
+  "licencia": "CC0 · síntesis propia, sin fuentes externas",
+  "sfx": [
+    {
+      "id": "thunder-01",
+      "nombre": "Trueno cercano",
+      "archivo": "/sfx/thunder-01.wav",
+      "durSec": 5,
+      "etiquetas": [
+        "clima"
+      ]
+    },
+    {
+      "id": "thunder-02",
+      "nombre": "Trueno lejano",
+      "archivo": "/sfx/thunder-02.wav",
+      "durSec": 6,
+      "etiquetas": [
+        "clima"
+      ]
+    },
+    {
+      "id": "rain-01",
+      "nombre": "Lluvia constante",
+      "archivo": "/sfx/rain-01.wav",
+      "durSec": 6,
+      "etiquetas": [
+        "clima"
+      ]
+    },
+    {
+      "id": "wind-01",
+      "nombre": "Viento con rachas",
+      "archivo": "/sfx/wind-01.wav",
+      "durSec": 6,
+      "etiquetas": [
+        "clima"
+      ]
+    },
+    {
+      "id": "footsteps-01",
+      "nombre": "Pasos sobre grava",
+      "archivo": "/sfx/footsteps-01.wav",
+      "durSec": 5,
+      "etiquetas": [
+        "acción"
+      ]
+    },
+    {
+      "id": "door-creak-01",
+      "nombre": "Puerta rechinando",
+      "archivo": "/sfx/door-creak-01.wav",
+      "durSec": 3.5,
+      "etiquetas": [
+        "interior"
+      ]
+    },
+    {
+      "id": "door-slam-01",
+      "nombre": "Portazo",
+      "archivo": "/sfx/door-slam-01.wav",
+      "durSec": 1.2,
+      "etiquetas": [
+        "interior",
+        "acción"
+      ]
+    },
+    {
+      "id": "sword-clash-01",
+      "nombre": "Choque de espadas",
+      "archivo": "/sfx/sword-clash-01.wav",
+      "durSec": 2,
+      "etiquetas": [
+        "combate"
+      ]
+    },
+    {
+      "id": "sword-unsheathe-01",
+      "nombre": "Desenvainar",
+      "archivo": "/sfx/sword-unsheathe-01.wav",
+      "durSec": 1.5,
+      "etiquetas": [
+        "combate"
+      ]
+    },
+    {
+      "id": "roar-01",
+      "nombre": "Rugido de bestia",
+      "archivo": "/sfx/roar-01.wav",
+      "durSec": 3,
+      "etiquetas": [
+        "bestia"
+      ]
+    },
+    {
+      "id": "wolf-howl-01",
+      "nombre": "Aullido de lobo",
+      "archivo": "/sfx/wolf-howl-01.wav",
+      "durSec": 4,
+      "etiquetas": [
+        "bestia"
+      ]
+    },
+    {
+      "id": "dragon-roar-01",
+      "nombre": "Rugido de dragón",
+      "archivo": "/sfx/dragon-roar-01.wav",
+      "durSec": 4.5,
+      "etiquetas": [
+        "bestia"
+      ]
+    },
+    {
+      "id": "monster-growl-01",
+      "nombre": "Gruñido de monstruo",
+      "archivo": "/sfx/monster-growl-01.wav",
+      "durSec": 3.5,
+      "etiquetas": [
+        "bestia"
+      ]
+    },
+    {
+      "id": "bird-chirp-01",
+      "nombre": "Pájaros",
+      "archivo": "/sfx/bird-chirp-01.wav",
+      "durSec": 4,
+      "etiquetas": [
+        "naturaleza"
+      ]
+    },
+    {
+      "id": "crickets-01",
+      "nombre": "Grillos",
+      "archivo": "/sfx/crickets-01.wav",
+      "durSec": 5,
+      "etiquetas": [
+        "naturaleza"
+      ]
+    },
+    {
+      "id": "water-flow-01",
+      "nombre": "Arroyo",
+      "archivo": "/sfx/water-flow-01.wav",
+      "durSec": 6,
+      "etiquetas": [
+        "agua"
+      ]
+    },
+    {
+      "id": "waves-01",
+      "nombre": "Olas del mar",
+      "archivo": "/sfx/waves-01.wav",
+      "durSec": 7,
+      "etiquetas": [
+        "agua"
+      ]
+    },
+    {
+      "id": "drip-01",
+      "nombre": "Goteo en caverna",
+      "archivo": "/sfx/drip-01.wav",
+      "durSec": 3,
+      "etiquetas": [
+        "agua",
+        "interior"
+      ]
+    },
+    {
+      "id": "fire-01",
+      "nombre": "Fuego crepitante",
+      "archivo": "/sfx/fire-01.wav",
+      "durSec": 6,
+      "etiquetas": [
+        "fuego"
+      ]
+    },
+    {
+      "id": "explosion-01",
+      "nombre": "Explosión",
+      "archivo": "/sfx/explosion-01.wav",
+      "durSec": 4,
+      "etiquetas": [
+        "impacto"
+      ]
+    },
+    {
+      "id": "glass-break-01",
+      "nombre": "Cristal rompiéndose",
+      "archivo": "/sfx/glass-break-01.wav",
+      "durSec": 2,
+      "etiquetas": [
+        "impacto"
+      ]
+    },
+    {
+      "id": "snap-01",
+      "nombre": "Crujido seco",
+      "archivo": "/sfx/snap-01.wav",
+      "durSec": 0.8,
+      "etiquetas": [
+        "impacto"
+      ]
+    },
+    {
+      "id": "heartbeat-01",
+      "nombre": "Latido del corazón",
+      "archivo": "/sfx/heartbeat-01.wav",
+      "durSec": 4.2,
+      "etiquetas": [
+        "cuerpo"
+      ]
+    },
+    {
+      "id": "gasp-01",
+      "nombre": "Jadeo",
+      "archivo": "/sfx/gasp-01.wav",
+      "durSec": 1.4,
+      "etiquetas": [
+        "cuerpo"
+      ]
+    },
+    {
+      "id": "laugh-01",
+      "nombre": "Risa",
+      "archivo": "/sfx/laugh-01.wav",
+      "durSec": 3,
+      "etiquetas": [
+        "voz"
+      ]
+    },
+    {
+      "id": "scream-01",
+      "nombre": "Grito",
+      "archivo": "/sfx/scream-01.wav",
+      "durSec": 2.5,
+      "etiquetas": [
+        "voz"
+      ]
+    },
+    {
+      "id": "horse-gallop-01",
+      "nombre": "Galope de caballo",
+      "archivo": "/sfx/horse-gallop-01.wav",
+      "durSec": 4.5,
+      "etiquetas": [
+        "acción"
+      ]
+    },
+    {
+      "id": "echo-ping-01",
+      "nombre": "Eco de caverna",
+      "archivo": "/sfx/echo-ping-01.wav",
+      "durSec": 3,
+      "etiquetas": [
+        "espacio"
+      ]
+    },
+    {
+      "id": "stone-grind-01",
+      "nombre": "Piedra moliendo",
+      "archivo": "/sfx/stone-grind-01.wav",
+      "durSec": 3.5,
+      "etiquetas": [
+        "espacio",
+        "impacto"
+      ]
+    },
+    {
+      "id": "magic-sparkle-01",
+      "nombre": "Destello mágico",
+      "archivo": "/sfx/magic-sparkle-01.wav",
+      "durSec": 2.5,
+      "etiquetas": [
+        "magia"
+      ]
+    },
+    {
+      "id": "bell-01",
+      "nombre": "Campana",
+      "archivo": "/sfx/bell-01.wav",
+      "durSec": 5,
+      "etiquetas": [
+        "señal"
+      ]
+    },
+    {
+      "id": "bell-toll-01",
+      "nombre": "Campanada grave",
+      "archivo": "/sfx/bell-toll-01.wav",
+      "durSec": 6,
+      "etiquetas": [
+        "señal"
+      ]
+    },
+    {
+      "id": "horn-01",
+      "nombre": "Cuerno",
+      "archivo": "/sfx/horn-01.wav",
+      "durSec": 3,
+      "etiquetas": [
+        "señal"
+      ]
+    },
+    {
+      "id": "war-drums-01",
+      "nombre": "Tambores de guerra",
+      "archivo": "/sfx/war-drums-01.wav",
+      "durSec": 5,
+      "etiquetas": [
+        "combate"
+      ]
+    },
+    {
+      "id": "whoosh-01",
+      "nombre": "Whoosh",
+      "archivo": "/sfx/whoosh-01.wav",
+      "durSec": 1.5,
+      "etiquetas": [
+        "movimiento"
+      ]
+    },
+    {
+      "id": "whoosh-02",
+      "nombre": "Doble whoosh",
+      "archivo": "/sfx/whoosh-02.wav",
+      "durSec": 2.2,
+      "etiquetas": [
+        "movimiento"
+      ]
+    },
+    {
+      "id": "leaves-01",
+      "nombre": "Hojas secas",
+      "archivo": "/sfx/leaves-01.wav",
+      "durSec": 4,
+      "etiquetas": [
+        "naturaleza"
+      ]
+    }
+  ]
+}

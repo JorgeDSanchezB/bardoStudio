@@ -62,6 +62,7 @@ export interface EstadoProyecto {
   analyzedAt: number | null;
   approvedAt: number | null;
   fase2: Record<string, unknown>;
+  faseSfx: Record<string, unknown>;
   fase3: Record<string, unknown>;
   fase4: Record<string, unknown>;
   fase5: Record<string, unknown>;

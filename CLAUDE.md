@@ -76,10 +76,10 @@ README.md                    — visión general del producto y cómo empezar
 CLAUDE.md / AGENTS.md        — este documento (guía de agente, espejos)
 docs/architecture.md         — arquitectura: pipeline, módulos, API, modelo de datos, persistencia
 docs/current-state.md        — estado actual por fase, hitos, limitaciones, datos vivos
-docs/decisions/001…010-*.md — ADRs: database, authentication, audio-processing,
+docs/decisions/001…011-*.md — ADRs: database, authentication, audio-processing,
                               canvas-timeline, web-audio-engine, resumable-transcription,
                               edge-trim-offset, project-persistence, user-music,
-                              ui-language-palette
+                              ui-language-palette, sfx-module
 worklog.md                   — bitácora acumulativa por Task ID (historia primaria)
 ```
 

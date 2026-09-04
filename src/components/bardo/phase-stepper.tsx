@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   Upload,
   AudioLines,
+  Sparkles,
   Music2,
   SlidersHorizontal,
   Scissors,
@@ -26,6 +27,12 @@ export const PHASES = [
     icon: AudioLines,
   },
   {
+    n: 2.5,
+    title: "Efectos de sonido",
+    desc: "Palabras clave → SFX",
+    icon: Sparkles,
+  },
+  {
     n: 3,
     title: "Gestión de música",
     desc: "Biblioteca CC0 por ánimo",
@@ -40,7 +47,7 @@ export const PHASES = [
   {
     n: 5,
     title: "Editor de mezcla",
-    desc: "Cuchilla, arrastre, medidores",
+    desc: "Cuchilla, SFX, medidores",
     icon: Scissors,
   },
   {
@@ -59,8 +66,16 @@ export type StepStatus =
   | "review"
   | "approved";
 
-/** Estados de las 6 fases, en orden (fase 1..6). */
-export type EstadosFases = [StepStatus, StepStatus, StepStatus, StepStatus, StepStatus, StepStatus];
+/** Estados de las 7 fases, en orden (1, 2, 2.5, 3, 4, 5, 6). */
+export type EstadosFases = [
+  StepStatus,
+  StepStatus,
+  StepStatus,
+  StepStatus,
+  StepStatus,
+  StepStatus,
+  StepStatus,
+];
 
 interface PhaseStepperProps {
   statuses: EstadosFases;
@@ -79,7 +94,7 @@ export function PhaseStepper({ statuses }: PhaseStepperProps) {
 
   return (
     <nav aria-label="Progreso del pipeline" className="w-full">
-      <ol className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+      <ol className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
         {PHASES.map((p, i) => {
           const st = statuses[i];
           const ok = st === "approved";

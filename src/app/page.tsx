@@ -39,6 +39,7 @@ import { TranscriptView } from "@/components/bardo/transcript-view";
 import { Fase2Progress } from "@/components/bardo/fase2-progress";
 import { Fase2Gate } from "@/components/bardo/fase2-gate";
 import { Fase3Seccion } from "@/components/bardo/fase3-seccion";
+import { SfxSeccion } from "@/components/bardo/sfx-seccion";
 import { Fase4Seccion } from "@/components/bardo/fase4-seccion";
 import { Fase5Seccion } from "@/components/bardo/fase5-seccion";
 import { Fase6Seccion } from "@/components/bardo/fase6-seccion";
@@ -80,6 +81,7 @@ export default function Page() {
   const playheadSec = useProjectStore((s) => s.playheadSec);
   const configDefaults = useProjectStore((s) => s.configDefaults);
   const fase2 = useProjectStore((s) => s.fase2);
+  const faseSfx = useProjectStore((s) => s.faseSfx);
   const fase3 = useProjectStore((s) => s.fase3);
   const fase4 = useProjectStore((s) => s.fase4);
   const fase5 = useProjectStore((s) => s.fase5);
@@ -927,7 +929,7 @@ export default function Page() {
   // ---------- render ----------
   const showUpload = !hydrated || status === "empty";
 
-  // estados del stepper (6 fases)
+  // estados del stepper (7 fases: 1, 2, 2.5, 3, 4, 5, 6)
   const stepStatuses: EstadosFases = [
     status === "approved"
       ? "approved"
@@ -948,6 +950,11 @@ export default function Page() {
               : "idle"
       : "locked",
     fase2.status === "approved"
+      ? faseSfx.status === "error"
+        ? "review"
+        : faseSfx.status
+      : "locked",
+    faseSfx.status === "approved"
       ? fase3.status === "error"
         ? "review"
         : fase3.status
@@ -970,7 +977,8 @@ export default function Page() {
   ];
   const faseActiva = (() => {
     const idx = stepStatuses.findIndex((st) => st !== "approved");
-    return idx < 0 ? 6 : idx + 1;
+    if (idx < 0) return 6;
+    return [1, 2, 2.5, 3, 4, 5, 6][idx];
   })();
   const formatLabel =
     savedResult?.format === "wav"
@@ -1038,10 +1046,10 @@ export default function Page() {
               variant="outline"
               className="hidden gap-1 border-emerald-800/60 text-[10px] text-emerald-300 sm:inline-flex"
             >
-              <ShieldCheck className="h-3 w-3" /> 6 fases
+              <ShieldCheck className="h-3 w-3" /> 7 fases
             </Badge>
             <Badge variant="outline" className="text-[10px] text-zinc-400">
-              Fase {faseActiva} / 6
+              Fase {faseActiva} / 7
             </Badge>
             <Button
               variant="ghost"
@@ -1558,7 +1566,7 @@ export default function Page() {
                               onReopen={() => {
                                 if (
                                   window.confirm(
-                                    "Al reabrir la Fase 2 se reinician las fases 3-6 (asignaciones, mezcla, editor y exportación). ¿Continuar?"
+                                    "Al reabrir la Fase 2 se reinician las fases 2.5-6 (efectos, asignaciones, mezcla, editor y exportación). ¿Continuar?"
                                   )
                                 ) {
                                   useProjectStore.getState().reabrirFase2();
@@ -1571,15 +1579,22 @@ export default function Page() {
                       </section>
                     )}
 
-                    {/* ============ FASES 3-6: música, mezcla, editor, exportación ============ */}
+                    {/* ============ FASE 2.5: efectos de sonido ============ */}
                     {status === "approved" && fase2.status === "approved" && (
-                      <>
-                        <Fase3Seccion />
-                        <Fase4Seccion />
-                        <Fase5Seccion sourceUrl={sourceUrl} />
-                        <Fase6Seccion sourceUrl={sourceUrl} />
-                      </>
+                      <SfxSeccion />
                     )}
+
+                    {/* ============ FASES 3-6: música, mezcla, editor, exportación ============ */}
+                    {status === "approved" &&
+                      fase2.status === "approved" &&
+                      faseSfx.status === "approved" && (
+                        <>
+                          <Fase3Seccion />
+                          <Fase4Seccion />
+                          <Fase5Seccion sourceUrl={sourceUrl} />
+                          <Fase6Seccion sourceUrl={sourceUrl} />
+                        </>
+                      )}
                   </>
                 )}
 
@@ -1594,9 +1609,10 @@ export default function Page() {
                       <CardContent className="pb-4">
                         <p className="text-[11px] leading-relaxed text-zinc-500">
                           Fase 1 aprobada y bloqueada. El pipeline continúa más
-                          abajo: música CC0 (3), mezcla automática (4), editor
-                          en vivo (5) y exportación + informe PDF (6). Cada fase
-                          requiere su aprobación explícita.
+                          abajo: efectos por palabras clave (2.5), música CC0
+                          (3), mezcla automática (4), editor en vivo (5) y
+                          exportación + informe PDF (6). Cada fase requiere su
+                          aprobación explícita.
                         </p>
                         <Button
                           variant="ghost"
@@ -1676,8 +1692,8 @@ export default function Page() {
               </span>
             )}
             <span>
-              Bloques ≤ 5 min · RAM acotada · Fase 1-2 locales/IA · Fases 3-6:
-              música CC0 + la tuya, mezcla y export en el navegador ·
+              Bloques ≤ 5 min · RAM acotada · Fase 1-2 locales/IA · Efectos SFX
+              (2.5) + música CC0 + la tuya, mezcla y export en el navegador ·
               proyectos guardables y reabribles
             </span>
           </span>

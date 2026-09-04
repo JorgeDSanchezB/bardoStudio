@@ -35,6 +35,15 @@ import {
   type Mezcla,
 } from "@/lib/fase4/tipos";
 import type { ExportInfo } from "@/lib/fase6/informe";
+import type {
+  SfxCategoria,
+  SfxConfig,
+  SfxDef,
+  SfxDefectos,
+  SfxEvento,
+  SfxResumen,
+} from "@/lib/sfx/tipos";
+import { SFX_DEFECTOS } from "@/lib/sfx/tipos";
 import type { ProyectoGuardado } from "@/lib/proyecto/tipos";
 import { saveAnalysis } from "@/lib/idb";
 import { esAnimo } from "@/lib/fase2/types";
@@ -70,6 +79,33 @@ const fase2Inicial: Fase2Estado = {
   configFase2: null,
   aprobadaEn: null,
   progreso: null,
+};
+
+// ---------------- Fase 2.5: efectos de sonido (SFX) ----------------
+
+export interface FaseSfxEstado {
+  status: FaseSimpleStatus;
+  /** eventos detectados (y editables) sobre la línea de tiempo */
+  eventos: SfxEvento[];
+  resumen: SfxResumen | null;
+  /** config en vigor (sembrada desde /api/sfx-config; editable en el panel) */
+  config: SfxConfig | null;
+  /** biblioteca (id → archivo/duración); volátil pero persistida por robustez */
+  biblioteca: SfxDef[] | null;
+  configTouched: boolean;
+  error: string | null;
+  aprobadaEn: number | null;
+}
+
+const faseSfxInicial: FaseSfxEstado = {
+  status: "idle",
+  eventos: [],
+  resumen: null,
+  config: null,
+  biblioteca: null,
+  configTouched: false,
+  error: null,
+  aprobadaEn: null,
 };
 
 // ---------------- Fase 3: biblioteca musical + asignación ----------------
@@ -217,6 +253,7 @@ interface ProjectState {
   /** epoch ms de la aprobación de la Fase 1 (informe PDF) */
   approvedAt: number | null;
   fase2: Fase2Estado;
+  faseSfx: FaseSfxEstado;
   fase3: Fase3Estado;
   fase4: Fase4Estado;
   fase5: Fase5Estado;
@@ -282,6 +319,34 @@ interface ProjectActions {
   aprobarFase2: () => void;
   reabrirFase2: () => void;
   rehacerFase2: () => void;
+  // ---- Fase 2.5 (SFX) ----
+  /** siembra config+biblioteca desde /api/sfx-config (no pisa una config editada) */
+  seedConfigSfx: (cfg: { config: SfxConfig; biblioteca: SfxDef[] }) => void;
+  /** aplica el resultado de la detección (worker o inline) */
+  aplicarDeteccionSfx: (eventos: SfxEvento[], resumen: SfxResumen) => void;
+  fallarSfx: (msg: string) => void;
+  /** vuelve a «idle» para re-detectar (conserva config/biblioteca) */
+  reiniciarSfx: () => void;
+  ajustarSfxEvento: (
+    id: string,
+    patch: Partial<Pick<SfxEvento, "activo" | "sfxId" | "volumenDb" | "inicio">>
+  ) => void;
+  eliminarSfxEvento: (id: string) => void;
+  añadirSfxEvento: (ev: SfxEvento) => void;
+  activarTodosSfx: (activo: boolean) => void;
+  eliminarTodosSfx: () => void;
+  /** edits del panel de palabras clave */
+  ajustarCategoriaSfx: (
+    categoria: string,
+    patch: Partial<Pick<SfxCategoria, "etiqueta" | "sfxId" | "activo" | "volumenDb" | "palabras">>
+  ) => void;
+  añadirCategoriaSfx: (cat: SfxCategoria) => void;
+  eliminarCategoriaSfx: (categoria: string) => void;
+  setDefectosSfx: (patch: Partial<SfxDefectos>) => void;
+  /** reemplaza la config completa (importar JSON / restaurar servidor) */
+  reemplazarConfigSfx: (config: SfxConfig) => void;
+  aprobarFaseSfx: () => void;
+  reabrirFaseSfx: () => void;
   // ---- Fase 3 ----
   setCatalogoFase3: (pistas: Pista[]) => void;
   autoAsignarFase3: () => void;
@@ -340,6 +405,7 @@ const initial: ProjectState = {
   analyzedAt: null,
   approvedAt: null,
   fase2: fase2Inicial,
+  faseSfx: faseSfxInicial,
   fase3: fase3Inicial,
   fase4: fase4Inicial,
   fase5: fase5Inicial,
@@ -608,6 +674,101 @@ function validarExport(v: unknown): ExportInfo | null {
   };
 }
 
+// ---------------- Validación SFX (Fase 2.5) ----------------
+
+function validarSfxEvento(v: unknown): SfxEvento | null {
+  const f = filaObjeto(v);
+  if (!f) return null;
+  if (typeof f.id !== "string" || !f.id) return null;
+  const categoria = strO(f.categoria, "", 64);
+  const sfxId = strO(f.sfxId, "", 64);
+  if (!categoria || !sfxId) return null;
+  return {
+    id: f.id.slice(0, 80),
+    palabra: strO(f.palabra, "", 40),
+    categoria,
+    sfxId,
+    inicio: numO(f.inicio, 0, 0, 24 * 3600),
+    durSec: numO(f.durSec, 1, 0.05, 600),
+    volumenDb: numO(f.volumenDb, -12, -60, 6),
+    confidencia: numO(f.confidencia, 0.5, 0, 1),
+    origen: f.origen === "manual" ? "manual" : "auto",
+    activo: boolO(f.activo, true),
+  };
+}
+
+function normalizarSfxDefectos(v: unknown): SfxDefectos {
+  const f = filaObjeto(v) ?? {};
+  return {
+    nivelDb: numO(f.nivelDb, SFX_DEFECTOS.nivelDb, -60, 6),
+    crossfadeSeg: numO(f.crossfadeSeg, SFX_DEFECTOS.crossfadeSeg, 0, 3),
+    minSeparacionSeg: numO(
+      f.minSeparacionSeg,
+      SFX_DEFECTOS.minSeparacionSeg,
+      0,
+      30
+    ),
+    respetarDucking: boolO(f.respetarDucking, true),
+    maxEventos: Math.trunc(numO(f.maxEventos, SFX_DEFECTOS.maxEventos, 1, 1000)),
+  };
+}
+
+/** Normaliza una config SFX arbitraria (importar JSON, servidor, .bsproj). */
+export function normalizarConfigSfx(v: unknown): SfxConfig | null {
+  const f = filaObjeto(v);
+  if (!f || !Array.isArray(f.categorias)) return null;
+  const categorias: SfxCategoria[] = [];
+  for (const c of f.categorias.slice(0, 120)) {
+    const o = filaObjeto(c);
+    if (!o) continue;
+    const categoria = strO(o.categoria, "", 64);
+    const sfxId = strO(o.sfxId, "", 64);
+    if (!categoria || !sfxId) continue;
+    const palabras = Array.isArray(o.palabras)
+      ? o.palabras
+          .filter((p): p is string => typeof p === "string" && p.trim().length > 0)
+          .map((p) => p.slice(0, 40))
+          .slice(0, 60)
+      : [];
+    if (palabras.length === 0) continue;
+    categorias.push({
+      categoria,
+      etiqueta: strO(o.etiqueta, categoria, 80),
+      sfxId,
+      activo: boolO(o.activo, true),
+      volumenDb:
+        typeof o.volumenDb === "number" && Number.isFinite(o.volumenDb)
+          ? numO(o.volumenDb, -12, -60, 6)
+          : null,
+      palabras,
+    });
+  }
+  if (categorias.length === 0) return null;
+  return {
+    version: numO(f.version, 1, 1, 99),
+    defectos: normalizarSfxDefectos(f.defectos),
+    categorias,
+  };
+}
+
+function validarSfxDef(v: unknown): SfxDef | null {
+  const f = filaObjeto(v);
+  if (!f) return null;
+  if (typeof f.id !== "string" || !f.id) return null;
+  const archivo = strO(f.archivo, "", 140);
+  if (!archivo.startsWith("/")) return null;
+  return {
+    id: f.id.slice(0, 64),
+    nombre: strO(f.nombre, f.id, 80),
+    archivo,
+    durSec: numO(f.durSec, 1, 0.05, 600),
+    etiquetas: Array.isArray(f.etiquetas)
+      ? f.etiquetas.filter((e): e is string => typeof e === "string").slice(0, 8)
+      : undefined,
+  };
+}
+
+
 function validarResumenFase2(v: unknown): Fase2Resumen | null {
   const f = filaObjeto(v);
   if (!f) return null;
@@ -671,6 +832,7 @@ interface EstadoValidado {
   analyzedAt: number | null;
   approvedAt: number | null;
   fase2: Fase2Estado;
+  faseSfx: FaseSfxEstado;
   fase3: Fase3Estado;
   fase4: Fase4Estado;
   fase5: Fase5Estado;
@@ -901,6 +1063,44 @@ function validarEstadoProyecto(bruto: unknown): EstadoValidado | null {
       status6 === "approved" ? numO(f6.aprobadaEn, 0, 0, 4102444800000) : null,
   };
 
+  // ---- Fase 2.5 (SFX) ----
+  const fsx = filaObjeto(f.faseSfx) ?? {};
+  const eventosSfx = (Array.isArray(fsx.eventos) ? fsx.eventos : [])
+    .map(validarSfxEvento)
+    .filter((e): e is SfxEvento => e !== null)
+    .slice(0, 400);
+  const bibliotecaSfx = (Array.isArray(fsx.biblioteca) ? fsx.biblioteca : [])
+    .map(validarSfxDef)
+    .filter((b): b is SfxDef => b !== null)
+    .slice(0, 200);
+  const rsfx = filaObjeto(fsx.resumen);
+  const statusSfx: FaseSimpleStatus =
+    fsx.status === "approved"
+      ? "approved"
+      : fsx.status === "error"
+        ? "error"
+        : fsx.status === "review"
+          ? "review"
+          : "idle";
+  const faseSfx: FaseSfxEstado = {
+    status: statusSfx,
+    eventos: eventosSfx,
+    resumen: rsfx
+      ? {
+          detectados: Math.trunc(numO(rsfx.detectados, eventosSfx.length, 0, 1000)),
+          activos: Math.trunc(numO(rsfx.activos, eventosSfx.filter((e) => e.activo).length, 0, 1000)),
+          categorias: Math.trunc(numO(rsfx.categorias, new Set(eventosSfx.map((e) => e.categoria)).size, 0, 200)),
+          palabraTop: strO(rsfx.palabraTop, "—", 40),
+        }
+      : null,
+    config: normalizarConfigSfx(fsx.config),
+    biblioteca: bibliotecaSfx,
+    configTouched: boolO(fsx.configTouched),
+    error: typeof fsx.error === "string" ? fsx.error.slice(0, 400) : null,
+    aprobadaEn:
+      statusSfx === "approved" ? numO(fsx.aprobadaEn, 0, 0, 4102444800000) : null,
+  };
+
   return {
     proyecto: null,
     fileMeta,
@@ -918,6 +1118,7 @@ function validarEstadoProyecto(bruto: unknown): EstadoValidado | null {
     approvedAt:
       status === "approved" ? numO(f.approvedAt, 0, 0, 4102444800000) : null,
     fase2,
+    faseSfx,
     fase3,
     fase4,
     fase5,
@@ -949,6 +1150,7 @@ function estadoPersistido(s: ProjectState): EstadoValidado & { proyecto: Project
     analyzedAt: s.analyzedAt,
     approvedAt: s.approvedAt,
     fase2: { ...s.fase2, progreso: null },
+    faseSfx: s.faseSfx,
     fase3: { ...s.fase3, catalogo: null },
     fase4: { ...s.fase4, mezcla: null },
     fase5: s.fase5,
@@ -1280,6 +1482,7 @@ export const useProjectStore = create<ProjectStore>()(
       reabrirFase2: () =>
         set({
           fase2: { ...get().fase2, status: "review", aprobadaEn: null },
+          faseSfx: faseSfxInicial,
           fase3: fase3Inicial,
           fase4: fase4Inicial,
           fase5: fase5Inicial,
@@ -1292,6 +1495,181 @@ export const useProjectStore = create<ProjectStore>()(
             ...fase2Inicial,
             configFase2: get().fase2.configFase2,
           },
+          faseSfx: faseSfxInicial,
+          fase3: fase3Inicial,
+          fase4: fase4Inicial,
+          fase5: fase5Inicial,
+          fase6: fase6Inicial,
+        }),
+
+      // ---------- acciones de Fase 2.5 (SFX) ----------
+
+      seedConfigSfx: ({ config, biblioteca }) => {
+        const s = get();
+        set({
+          faseSfx: {
+            ...s.faseSfx,
+            // no pisar una config editada por el usuario en el panel
+            config: s.faseSfx.configTouched ? s.faseSfx.config : config,
+            biblioteca,
+            error: null,
+          },
+        });
+      },
+
+      aplicarDeteccionSfx: (eventos, resumen) =>
+        set({
+          faseSfx: {
+            ...get().faseSfx,
+            status: "review",
+            eventos,
+            resumen,
+            error: null,
+          },
+        }),
+
+      fallarSfx: (msg) =>
+        set({ faseSfx: { ...get().faseSfx, status: "error", error: msg } }),
+
+      reiniciarSfx: () =>
+        set({
+          faseSfx: {
+            ...get().faseSfx,
+            status: "idle",
+            eventos: [],
+            resumen: null,
+            error: null,
+            aprobadaEn: null,
+          },
+        }),
+
+      ajustarSfxEvento: (id, patch) =>
+        set({
+          faseSfx: {
+            ...get().faseSfx,
+            eventos: get().faseSfx.eventos.map((e) =>
+              e.id === id
+                ? {
+                    ...e,
+                    ...patch,
+                    volumenDb:
+                      patch.volumenDb !== undefined
+                        ? Math.min(6, Math.max(-60, patch.volumenDb))
+                        : e.volumenDb,
+                    inicio:
+                      patch.inicio !== undefined
+                        ? Math.round(Math.max(0, patch.inicio) * 10) / 10
+                        : e.inicio,
+                  }
+                : e
+            ),
+          },
+        }),
+
+      eliminarSfxEvento: (id) =>
+        set({
+          faseSfx: {
+            ...get().faseSfx,
+            eventos: get().faseSfx.eventos.filter((e) => e.id !== id),
+          },
+        }),
+
+      añadirSfxEvento: (ev) =>
+        set({
+          faseSfx: {
+            ...get().faseSfx,
+            eventos: [...get().faseSfx.eventos, ev],
+          },
+        }),
+
+      activarTodosSfx: (activo) =>
+        set({
+          faseSfx: {
+            ...get().faseSfx,
+            eventos: get().faseSfx.eventos.map((e) => ({ ...e, activo })),
+          },
+        }),
+
+      eliminarTodosSfx: () =>
+        set({ faseSfx: { ...get().faseSfx, eventos: [] } }),
+
+      ajustarCategoriaSfx: (categoria, patch) =>
+        set({
+          faseSfx: {
+            ...get().faseSfx,
+            configTouched: true,
+            config: get().faseSfx.config
+              ? {
+                  ...get().faseSfx.config!,
+                  categorias: get().faseSfx.config!.categorias.map((c) =>
+                    c.categoria === categoria ? { ...c, ...patch } : c
+                  ),
+                }
+              : null,
+          },
+        }),
+
+      añadirCategoriaSfx: (cat) => {
+        const s = get();
+        if (!s.faseSfx.config) return;
+        if (s.faseSfx.config.categorias.some((c) => c.categoria === cat.categoria))
+          return;
+        set({
+          faseSfx: {
+            ...s.faseSfx,
+            configTouched: true,
+            config: {
+              ...s.faseSfx.config,
+              categorias: [...s.faseSfx.config.categorias, cat],
+            },
+          },
+        });
+      },
+
+      eliminarCategoriaSfx: (categoria) =>
+        set({
+          faseSfx: {
+            ...get().faseSfx,
+            configTouched: true,
+            config: get().faseSfx.config
+              ? {
+                  ...get().faseSfx.config!,
+                  categorias: get().faseSfx.config!.categorias.filter(
+                    (c) => c.categoria !== categoria
+                  ),
+                }
+              : null,
+          },
+        }),
+
+      setDefectosSfx: (patch) => {
+        const s = get();
+        if (!s.faseSfx.config) return;
+        set({
+          faseSfx: {
+            ...s.faseSfx,
+            configTouched: true,
+            config: {
+              ...s.faseSfx.config,
+              defectos: { ...s.faseSfx.config.defectos, ...patch },
+            },
+          },
+        });
+      },
+
+      reemplazarConfigSfx: (config) =>
+        set({
+          faseSfx: { ...get().faseSfx, config, configTouched: true },
+        }),
+
+      aprobarFaseSfx: () =>
+        set({
+          faseSfx: { ...get().faseSfx, status: "approved", aprobadaEn: Date.now() },
+        }),
+
+      reabrirFaseSfx: () =>
+        set({
+          faseSfx: { ...get().faseSfx, status: "review", aprobadaEn: null },
           fase3: fase3Inicial,
           fase4: fase4Inicial,
           fase5: fase5Inicial,

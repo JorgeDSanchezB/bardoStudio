@@ -12,12 +12,13 @@ bun run dev   # servidor en http://localhost:3000 (puerto 3000)
 
 Abre la app y pulsa **«Demo con voz real (recomendada)»** para recorrer el pipeline completo en 3 minutos de audio.
 
-## El pipeline de 6 fases
+## El pipeline de 7 fases
 
 | Fase | Qué hace | Puerta |
 |---|---|---|
 | 1 · Ingestión | Picos + envolvente RMS, detección de silencios ajustable en vivo | Aprobar silencios |
 | 2 · Transcripción | ASR reanudable por bloques + tensión 0–100 y ánimo por escena (LLM); curva corregible | Aprobar curva |
+| 2.5 · Efectos (SFX) | Detecta **palabras clave** en la transcripción (trueno, pasos, espada…) y coloca efectos de sonido sincronizados; biblioteca de 37 SFX CC0 + auditoría por evento | Aprobar efectos |
 | 3 · Música | Biblioteca CC0 (9 pistas) + **importa tu propia música** (WAV/MP3/OGG/M4A ≤100 MB) | Aprobar banda sonora |
 | 4 · Mezcla automática | Bloques por escena, crossfades, ducking según voz y silencios | Aprobar arreglo |
 | 5 · Editor tipo Camtasia | Escucha en vivo: cuchilla, mover bloques, **recortar/alargar por los bordes** (con bucle automático), silenciar, cambiar pista | Aprobar mezcla |
@@ -25,6 +26,7 @@ Abre la app y pulsa **«Demo con voz real (recomendada)»** para recorrer el pip
 
 ## Características destacadas
 
+- **Efectos de sonido automáticos (SFX)**: la Fase 2.5 analiza la transcripción en busca de **381 palabras clave** (ES/EN, con sinónimos, plurales y derivados — *truenos*, *thunder*, *rugiendo*…) y coloca el efecto correspondiente en el segundo exacto de cada mención. Todo auditable: activa, cambia, desplaza, silencia o añade efectos a mano; el diccionario es editable (panel + `config/sfx_config.json`).
 - **Edición por bordes estilo Camtasia**: mantén pulsado el borde de un bloque para comprimirlo o alargarlo; el borde izquierdo decide en qué segundo del tema original entra la música y el derecho estira la pista en bucle.
 - **Proyectos guardables**: «Guardar / Guardar como copia / Abrir / Eliminar», archivo portátil **`.bsproj`** con el análisis incrustado y re-adjunte de audio tras recargar (como Camtasia).
 - **Tu música**: importación múltiple, metadatos editables, banda de tensión sugerida por la energía real del archivo; los archivos originales **nunca se re-codifican**.
