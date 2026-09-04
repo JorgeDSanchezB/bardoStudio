@@ -253,3 +253,16 @@ Work Log:
 
 Stage Summary:
 - Feature de bordes Camtasia (Fase 5) confirmada operativa de punta a punta en el estado actual del código (sin cambios necesarios): recorte, alargado, revelado, clamps, cursor, inspector, motor en vivo y persistencia. Estado de primera visita restaurado para el usuario.
+
+---
+Task ID: 10-docs (main, Z.ai Code)
+Task: Crear CLAUDE.md y AGENTS.md (no existían) con la memoria completa del proyecto para futuras sesiones de agentes.
+
+Work Log:
+- Verificado que no existían CLAUDE.md/AGENTS.md (ni variantes de caja) en la raíz.
+- Creado CLAUDE.md: qué es Bardo Studio (pipeline 6 fases + extras Camtasia), comandos (bun run dev en 3000, lint, tsc, db:push, dev.log), mapa de código (page.tsx única ruta, api/, components/bardo/, lib/audio+fase2-6, store, config, demos), convenciones no negociables (UI español, sin azul/índigo, footer sticky, set-state-in-effect, shadcn reuse, z-ai-sdk solo backend, fetches relativos, canvas dpr/captura, ediciones puras 0.1 s, materialización F5 tras aprobar F4), estado actual (Task 9-verif) y flujo de verificación obligatorio (lint+tsc+dev.log+agent-browser E2E+limpieza+worklog).
+- Creado AGENTS.md espejo: tabla de comandos, mapa del código, 10 reglas numeradas del proyecto, protocolo de verificación (flujo dorado + drag real de bordes + conservar pista propia) y estado actual con referencias a worklog (7-mus, 8-bordes, 9-verif). Nota de sincronía entre ambos archivos.
+- Sin cambios en código de la app; dev server sin tocar.
+
+Stage Summary:
+- Documentación de agente disponible: CLAUDE.md y AGENTS.md en la raíz, sincronizados, con toda la memoria operativa del proyecto (arquitectura, convenciones, reglas duras, protocolo de verificación y estado). Futuras sesiones pueden retomar sin re-explorar.
