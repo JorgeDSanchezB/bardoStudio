@@ -79,6 +79,7 @@ function crearBloque(
     fadeOutSeg: fade,
     muted: false,
     origen: "auto",
+    offsetOrigen: 0,
   };
 }
 

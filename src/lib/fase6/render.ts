@@ -142,7 +142,10 @@ export async function renderizarMezcla(
     const g = ctx.createGain();
     src.connect(g);
     g.connect(busMusica);
-    src.start(t0 + b.inicio, 0);
+    // punto de entrada en la pista = offsetOrigen (recorte de borde, Fase 5);
+    // envuelto módulo la duración porque la pista va en bucle
+    const faseOrigen = (Math.max(0, b.offsetOrigen ?? 0) % Math.max(0.1, buffer.duration));
+    src.start(t0 + b.inicio, faseOrigen);
     src.stop(t0 + b.fin + b.fadeOutSeg + 0.01);
     g.gain.setValueAtTime(gananciaFade(b, b.inicio), t0 + b.inicio);
     if (b.fadeInSeg > 0.001) {

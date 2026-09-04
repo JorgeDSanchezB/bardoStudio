@@ -584,6 +584,8 @@ function validarBloque(v: unknown): BloqueMusica | null {
     fadeOutSeg: numO(f.fadeOutSeg, 0, 0, 30),
     muted: boolO(f.muted),
     origen: f.origen === "edicion" ? "edicion" : "auto",
+    // punto de entrada en la pista (recorte de borde estilo Camtasia)
+    offsetOrigen: numO(f.offsetOrigen, 0, 0, 24 * 3600),
   };
 }
 
@@ -1426,7 +1428,11 @@ export const useProjectStore = create<ProjectStore>()(
         set({
           fase5: {
             status: "review",
-            bloques,
+            // normaliza el punto de entrada de la pista (recortes de borde)
+            bloques: bloques.map((b) => ({
+              ...b,
+              offsetOrigen: Math.max(0, b.offsetOrigen ?? 0),
+            })),
             params,
             ediciones: 0,
             detalleEdiciones: [],

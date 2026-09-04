@@ -34,9 +34,12 @@ import {
 import {
   dividirBloque,
   moverBloque,
+  recortarBloque,
   eliminarBloque,
   silenciarBloque,
   cambiarPistaBloque,
+  buclesDe,
+  type LadoRecorte,
 } from "@/lib/fase5/ediciones";
 import { registrarControlMotor } from "@/lib/fase5/registro-motor";
 import { formatTimecode } from "@/lib/format";
@@ -372,9 +375,12 @@ export function Fase5Seccion(props: Fase5SeccionProps) {
         <p className="max-w-3xl text-sm leading-relaxed text-zinc-400">
           Escucha la <strong className="text-zinc-200">mezcla completa</strong>{" "}
           (voz + música con ducking y crossfades) y afínala como en Camtasia:{" "}
-          <strong className="text-zinc-200">corta</strong> bloques con la cuchilla,{" "}
-          <strong className="text-zinc-200">arrastra</strong> para moverlos,
-          silencia o cambia la pista. Cada edición se recalcula al instante.
+          <strong className="text-zinc-200">corta</strong> bloques con la
+          cuchilla, <strong className="text-zinc-200">arrastra</strong> para
+          moverlos, <strong className="text-zinc-200">tira de sus bordes</strong>{" "}
+          para recortarlos o alargarlos (la pista continúa en bucle si hace
+          falta), silencia o cambia la pista. Cada edición se recalcula al
+          instante.
         </p>
       </div>
 
@@ -447,6 +453,31 @@ export function Fase5Seccion(props: Fase5SeccionProps) {
                   `Bloque movido a ${formatTimecode(nuevoInicio)}`
                 );
             }}
+            onRecortar={(id, lado: LadoRecorte, valor) => {
+              const original = bloques.find((b) => b.id === id);
+              const nuevos = recortarBloque(
+                bloques,
+                id,
+                lado,
+                valor,
+                duracion
+              );
+              if (!nuevos || !original) return;
+              const alargo =
+                lado === "inicio"
+                  ? valor < original.inicio
+                  : valor > original.fin;
+              aplicar(
+                nuevos,
+                lado === "inicio"
+                  ? `${
+                      alargo ? "Entrada adelantada a" : "Entrada recortada a"
+                    } ${formatTimecode(valor)}`
+                  : `${
+                      alargo ? "Salida alargada hasta" : "Salida recortada a"
+                    } ${formatTimecode(valor)}`
+              );
+            }}
             onSeek={(t) => void buscarA(t)}
           />
         </CardContent>
@@ -471,7 +502,25 @@ export function Fase5Seccion(props: Fase5SeccionProps) {
               </span>
             </CardTitle>
           </CardHeader>
-          <CardContent className="flex flex-wrap items-center gap-2 pb-4">
+          <CardContent className="space-y-2 pb-4">
+            <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-zinc-500">
+              {(seleccionado.offsetOrigen ?? 0) > 0.05 && (
+                <span className="font-mono">
+                  la pista arranca en su segundo{" "}
+                  {formatTimecode(seleccionado.offsetOrigen ?? 0).slice(3, 11)}
+                </span>
+              )}
+              {pistaSel && buclesDe(seleccionado, pistaSel.durSec) > 1 && (
+                <span>
+                  suena {buclesDe(seleccionado, pistaSel.durSec)} bucles de la
+                  pista
+                </span>
+              )}
+              <span className="text-zinc-600">
+                tira de los bordes en la línea de tiempo para recortar/alargar
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
             <Select
               value={seleccionado.pistaId}
               onValueChange={(v) => {
@@ -578,6 +627,7 @@ export function Fase5Seccion(props: Fase5SeccionProps) {
               <Trash2 className="h-3.5 w-3.5" />
               Eliminar
             </Button>
+            </div>
           </CardContent>
         </Card>
       )}

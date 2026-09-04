@@ -76,6 +76,13 @@ export interface BloqueMusica {
   fadeOutSeg: number;
   muted: boolean;
   origen: "auto" | "edicion";
+  /**
+   * Segundo de la PISTA DE ORIGEN donde arranca el bloque (recorte de borde
+   * estilo Camtasia). 0/ausente = la pista suena desde su principio.
+   * Al recortar el borde izquierdo avanza (se salta contenido); al estirarlo
+   * hacia la izquierda retrocede (revela contenido) hasta llegar a 0.
+   */
+  offsetOrigen?: number;
 }
 
 export interface MezclaStats {

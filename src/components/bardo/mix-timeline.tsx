@@ -7,6 +7,11 @@ import type { AnalysisData } from "@/store/project";
 import type { SilenceRegion } from "@/lib/audio/silence";
 import type { BloqueMusica } from "@/lib/fase4/tipos";
 import type { Pista } from "@/lib/fase3/tipos";
+import {
+  buclesDe,
+  limitesBorde,
+  type LadoRecorte,
+} from "@/lib/fase5/ediciones";
 import { ANIMO_COLORES } from "@/lib/fase2/types";
 import {
   clamp,
@@ -29,6 +34,8 @@ interface MixTimelineProps {
   selectedId?: string | null;
   onSelect?: (id: string | null) => void;
   onMover?: (id: string, nuevoInicio: number) => void;
+  /** Recorte/alargado por los bordes (estilo Camtasia). */
+  onRecortar?: (id: string, lado: LadoRecorte, valor: number) => void;
   onSeek: (t: number) => void;
 }
 
@@ -36,17 +43,32 @@ const RULER_H = 26;
 const NARR_H = 64;
 const MUS_H = 132;
 const MAX_PPS = 2000;
+/** ancho en px de la zona de agarre de cada borde de bloque */
+const EDGE_PX = 9;
 /** rango vertical del carril de música: dB → y */
 const DB_MIN = -48;
 const DB_MAX = 6;
 
 type View = { start: number; pps: number };
 
-interface Arrastre {
+/** Arrastre de cuerpo: desplaza el bloque completo. */
+interface ArrastreMover {
+  modo: "mover";
   id: string;
   inicioOriginal: number;
   deltaSec: number;
 }
+
+/** Arrastre de borde: recorta (hacia dentro) o alarga (hacia fuera). */
+interface ArrastreRecorte {
+  modo: "recorte";
+  id: string;
+  lado: LadoRecorte;
+  valorOriginal: number;
+  valor: number;
+}
+
+type Arrastre = ArrastreMover | ArrastreRecorte;
 
 export function MixTimeline(props: MixTimelineProps) {
   const {
@@ -63,6 +85,7 @@ export function MixTimeline(props: MixTimelineProps) {
     selectedId,
     onSelect,
     onMover,
+    onRecortar,
     onSeek,
   } = props;
 
@@ -77,6 +100,54 @@ export function MixTimeline(props: MixTimelineProps) {
     () => new Map(pistas.map((p) => [p.id, p])),
     [pistas]
   );
+
+  /** Aplica el arrastre en curso a un bloque (vista previa en vivo). */
+  const conArrastre = useCallback(
+    (b: BloqueMusica): BloqueMusica => {
+      if (!arrastre || arrastre.id !== b.id) return b;
+      if (arrastre.modo === "mover") {
+        return {
+          ...b,
+          inicio: b.inicio + arrastre.deltaSec,
+          fin: b.fin + arrastre.deltaSec,
+        };
+      }
+      const lim = limitesBorde(b, durationSec);
+      if (arrastre.lado === "inicio") {
+        const v = clamp(
+          Math.round(arrastre.valor * 10) / 10,
+          lim.inicioMin,
+          lim.inicioMax
+        );
+        const dur = b.fin - v;
+        return {
+          ...b,
+          inicio: v,
+          offsetOrigen: Math.max(0, (b.offsetOrigen ?? 0) + (v - b.inicio)),
+          fadeInSeg: Math.min(b.fadeInSeg, dur / 2),
+          fadeOutSeg: Math.min(b.fadeOutSeg, dur / 2),
+        };
+      }
+      const v = clamp(
+        Math.round(arrastre.valor * 10) / 10,
+        lim.finMin,
+        lim.finMax
+      );
+      const dur = v - b.inicio;
+      return {
+        ...b,
+        fin: v,
+        fadeInSeg: Math.min(b.fadeInSeg, dur / 2),
+        fadeOutSeg: Math.min(b.fadeOutSeg, dur / 2),
+      };
+    },
+    [arrastre, durationSec]
+  );
+
+  const ponerCursor = (css: string) => {
+    const el = canvasRef.current;
+    if (el && el.style.cursor !== css) el.style.cursor = css;
+  };
 
   // ---------- tamaño ----------
   useEffect(() => {
@@ -243,17 +314,8 @@ export function MixTimeline(props: MixTimelineProps) {
       ctx.stroke();
     }
 
-    // bloques
-    const bloquesVisibles = bloques.map((b) => {
-      if (arrastre && b.id === arrastre.id) {
-        return {
-          ...b,
-          inicio: b.inicio + arrastre.deltaSec,
-          fin: b.fin + arrastre.deltaSec,
-        };
-      }
-      return b;
-    });
+    // bloques (con la vista previa del arrastre aplicada)
+    const bloquesVisibles = bloques.map(conArrastre);
     for (const b of bloquesVisibles) {
       if (b.fin + b.fadeOutSeg < t0 || b.inicio > t1) continue;
       const pista = pistaMap.get(b.pistaId);
@@ -272,6 +334,41 @@ export function MixTimeline(props: MixTimelineProps) {
       ctx.lineWidth = sel ? 1.8 : 1;
       ctx.strokeRect(x + 0.5, musTop + 14.5, w - 1, MUS_H - 35);
       ctx.globalAlpha = 1;
+
+      // costuras de bucle: dónde reinicia la pista dentro del bloque
+      const durPista = pista?.durSec ?? 0;
+      if (durPista > 1 && w > 24 && durPista * pps > 18) {
+        const offset = Math.max(0, b.offsetOrigen ?? 0);
+        ctx.strokeStyle = "rgba(9,9,11,0.55)";
+        ctx.lineWidth = 1;
+        ctx.setLineDash([2, 3]);
+        let ts = b.inicio + (durPista - (offset % durPista));
+        while (ts < b.fin - 0.2) {
+          const xs = xDe(ts);
+          if (xs > x + 12 && xs < x2 - 12) {
+            ctx.beginPath();
+            ctx.moveTo(xs + 0.5, musTop + 16);
+            ctx.lineTo(xs + 0.5, musTop + MUS_H - 22);
+            ctx.stroke();
+          }
+          ts += durPista;
+        }
+        ctx.setLineDash([]);
+      }
+
+      // asas de borde (estilo Camtasia): agarre para recortar/alargar
+      if (editable && onRecortar && w >= 8) {
+        const gw = Math.min(6, w / 4);
+        const activo =
+          arrastre?.modo === "recorte" && arrastre.id === b.id;
+        ctx.fillStyle = activo
+          ? "#fbbf24"
+          : sel
+            ? "rgba(251,191,36,0.9)"
+            : "rgba(255,255,255,0.55)";
+        ctx.fillRect(x, musTop + 14, gw, MUS_H - 34);
+        ctx.fillRect(x2 - gw, musTop + 14, gw, MUS_H - 34);
+      }
 
       // cuñas de fundido
       ctx.fillStyle = "rgba(9,9,11,0.55)";
@@ -306,7 +403,11 @@ export function MixTimeline(props: MixTimelineProps) {
         ctx.font = "9px ui-monospace, monospace";
         ctx.fillStyle = "rgba(255,255,255,0.75)";
         ctx.fillText(
-          `${Math.round(b.fin - b.inicio)}s · ${pista.bpm} BPM`,
+          `${Math.round(b.fin - b.inicio)}s${
+            pista && buclesDe(b, pista.durSec) > 1
+              ? ` · bucle×${buclesDe(b, pista.durSec)}`
+              : ""
+          } · ${pista.bpm} BPM`,
           x + 6,
           musTop + 40
         );
@@ -418,6 +519,9 @@ export function MixTimeline(props: MixTimelineProps) {
     hopSec,
     playheadSec,
     hover,
+    conArrastre,
+    editable,
+    onRecortar,
   ]);
 
   useEffect(() => {
@@ -465,18 +569,40 @@ export function MixTimeline(props: MixTimelineProps) {
       if (y < musTop + 14 || y > musTop + MUS_H - 20) return null;
       const { start: t0, pps } = vistaEfectiva;
       const t = t0 + x / pps;
-      const lista = bloques.map((b) =>
-        arrastre && b.id === arrastre.id
-          ? { ...b, inicio: b.inicio + arrastre.deltaSec, fin: b.fin + arrastre.deltaSec }
-          : b
-      );
+      const lista = bloques.map(conArrastre);
       return (
         lista.find((b) => t >= b.inicio && t <= b.fin) ??
         lista.find((b) => t >= b.inicio - 0.3 && t <= b.fin + 0.3) ??
         null
       );
     },
-    [vistaEfectiva, bloques, arrastre]
+    [vistaEfectiva, bloques, conArrastre]
+  );
+
+  /** ¿El puntero está sobre el borde (asas) de un bloque? */
+  const hitBorde = useCallback(
+    (x: number, y: number): { id: string; lado: LadoRecorte } | null => {
+      if (!editable || !onRecortar) return null;
+      const musTop = RULER_H + NARR_H;
+      if (y < musTop + 14 || y > musTop + MUS_H - 20) return null;
+      const { start: t0, pps } = vistaEfectiva;
+      const t = t0 + x / pps;
+      const umbral = clamp(EDGE_PX / pps, 0.12, 1.2);
+      let mejor: { id: string; lado: LadoRecorte } | null = null;
+      let mejorDt = Infinity;
+      for (const b of bloques) {
+        for (const lado of ["inicio", "fin"] as const) {
+          const borde = lado === "inicio" ? b.inicio : b.fin;
+          const dt = Math.abs(t - borde);
+          if (dt < umbral && dt < mejorDt) {
+            mejor = { id: b.id, lado };
+            mejorDt = dt;
+          }
+        }
+      }
+      return mejor;
+    },
+    [editable, onRecortar, vistaEfectiva, bloques]
   );
 
   const enArrastre = useRef(false);
@@ -495,14 +621,39 @@ export function MixTimeline(props: MixTimelineProps) {
     const { start: t0, pps } = vistaEfectiva;
     const t = t0 + x / pps;
 
-    // arrastre de bloque (solo editable)
+    // arrastre de bloque (solo editable): primero los BORDES (recorte estilo
+    // Camtasia), luego el cuerpo (mover)
     if (editable) {
+      const borde = hitBorde(x, y);
+      if (borde) {
+        const b = bloques.find((x2) => x2.id === borde.id);
+        if (b) {
+          onSelect?.(b.id);
+          enArrastre.current = true;
+          setArrastre({
+            modo: "recorte",
+            id: b.id,
+            lado: borde.lado,
+            valorOriginal: borde.lado === "inicio" ? b.inicio : b.fin,
+            valor: borde.lado === "inicio" ? b.inicio : b.fin,
+          });
+          pressRef.current = { x, y, t, tiempo: performance.now() };
+          ponerCursor("ew-resize");
+          return;
+        }
+      }
       const b = hitBloque(x, y);
       if (b) {
         onSelect?.(b.id);
         enArrastre.current = true;
-        setArrastre({ id: b.id, inicioOriginal: b.inicio, deltaSec: 0 });
+        setArrastre({
+          modo: "mover",
+          id: b.id,
+          inicioOriginal: b.inicio,
+          deltaSec: 0,
+        });
         pressRef.current = { x, y, t, tiempo: performance.now() };
+        ponerCursor("grabbing");
         return;
       }
     }
@@ -532,6 +683,22 @@ export function MixTimeline(props: MixTimelineProps) {
     if (y > RULER_H) setHover({ x, t });
     else setHover(null);
 
+    // cursor según la zona (borde = recorte, cuerpo = mover)
+    if (!enArrastre.current && !panRef.current) {
+      if (editable) {
+        const borde = hitBorde(x, y);
+        ponerCursor(
+          borde
+            ? "ew-resize"
+            : hitBloque(x, y)
+              ? "grab"
+              : "crosshair"
+        );
+      } else {
+        ponerCursor("crosshair");
+      }
+    }
+
     if (panRef.current) {
       const dt = (x - panRef.current.x) / pps;
       setVista(clampVista({ pps, start: panRef.current.start - dt }));
@@ -539,8 +706,12 @@ export function MixTimeline(props: MixTimelineProps) {
     }
 
     if (enArrastre.current && arrastre) {
-      const delta = (x - (pressRef.current?.x ?? x)) / pps;
-      setArrastre({ ...arrastre, deltaSec: Math.round(delta * 10) / 10 });
+      if (arrastre.modo === "recorte") {
+        setArrastre({ ...arrastre, valor: t });
+      } else {
+        const delta = (x - (pressRef.current?.x ?? x)) / pps;
+        setArrastre({ ...arrastre, deltaSec: Math.round(delta * 10) / 10 });
+      }
     }
   };
 
@@ -556,12 +727,25 @@ export function MixTimeline(props: MixTimelineProps) {
     const x = e.clientX - rect.left;
 
     if (enArrastre.current && arrastre) {
-      const dur = arrastre.deltaSec;
       enArrastre.current = false;
-      const movio = Math.abs(dur) > 0.05;
-      const nuevoInicio = arrastre.inicioOriginal + dur;
       setArrastre(null);
       pressRef.current = null;
+      ponerCursor("crosshair");
+      if (arrastre.modo === "recorte") {
+        const movio =
+          Math.abs(arrastre.valor - arrastre.valorOriginal) > 0.05;
+        if (movio && onRecortar && editable) {
+          onRecortar(arrastre.id, arrastre.lado, arrastre.valor);
+        } else if (!movio) {
+          // clic simple sobre el asa → saltar al inicio del bloque
+          const b = bloques.find((x2) => x2.id === arrastre.id);
+          if (b) onSeek(clamp(b.inicio, 0, durationSec));
+        }
+        return;
+      }
+      const dur = arrastre.deltaSec;
+      const movio = Math.abs(dur) > 0.05;
+      const nuevoInicio = arrastre.inicioOriginal + dur;
       if (movio && onMover && editable) {
         onMover(arrastre.id, Math.round(nuevoInicio * 10) / 10);
       } else if (!movio) {
@@ -613,11 +797,11 @@ export function MixTimeline(props: MixTimelineProps) {
         <span className="hidden text-[10px] text-zinc-500 md:inline">
           Rueda = zoom · arrastra la regla = pan ·{" "}
           {editable
-            ? "arrastra un bloque para moverlo, clic para seleccionar"
+            ? "arrastra un bloque para moverlo; sus BORDES, para recortarlo o alargarlo"
             : "clic en la voz = saltar"}
         </span>
         <span className="md:hidden text-[10px] text-zinc-500">
-          Rueda = zoom · arrastra para explorar
+          Rueda = zoom · bordes de un bloque = recortar/alargar
         </span>
         <div className="ms-auto flex items-center gap-1">
           <Button
@@ -658,7 +842,10 @@ export function MixTimeline(props: MixTimelineProps) {
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
-        onPointerLeave={() => setHover(null)}
+        onPointerLeave={() => {
+          setHover(null);
+          ponerCursor("crosshair");
+        }}
         aria-label="Línea de tiempo de la mezcla: narración arriba, bloques de música abajo"
       />
       <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-zinc-500">
@@ -671,6 +858,7 @@ export function MixTimeline(props: MixTimelineProps) {
           reducción por ducking
         </span>
         <span>cuñas = fundidos de entrada/salida</span>
+        <span>┊ punteadas = la pista reinicia (bucle)</span>
       </div>
     </div>
   );

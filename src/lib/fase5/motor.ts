@@ -208,13 +208,16 @@ export class MotorMezcla {
       src.connect(g);
       g.connect(busMusica);
 
-      // arranque del bloque: en su inicio o ya en marcha desde `desde`
+      // arranque del bloque: en su inicio o ya en marcha desde `desde`.
+      // el punto de entrada en la pista es offsetOrigen (recorte de borde);
+      // la pista va en bucle, así que se envuelve módulo su duración.
       const arranca = Math.max(b.inicio, desde);
       const cuando = t0 + (arranca - desde);
+      const offsetOrigen = Math.max(0, b.offsetOrigen ?? 0);
       const fase =
         b.inicio >= desde - 0.001
-          ? 0
-          : (desde - b.inicio) % Math.max(0.1, buffer.duration);
+          ? offsetOrigen % Math.max(0.1, buffer.duration)
+          : (offsetOrigen + (desde - b.inicio)) % Math.max(0.1, buffer.duration);
       src.start(cuando, fase);
 
       const tParada = t0 + (finTotal - desde);
