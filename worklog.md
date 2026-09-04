@@ -234,3 +234,22 @@ Work Log:
 Stage Summary:
 - Fase 5 con manipulación de bordes estilo Camtasia COMPLETA: click mantenido en el borde de un bloque lo comprime o lo alarga; el borde izquierdo además decide en qué segundo de la pista original entra la música (offset persistido en BloqueMusica) y el derecho estira con bucle automático de la pista. Integrado en motor en vivo, render offline, cuchilla (continuidad de contenido), inspector, trazabilidad (detalles de edición), persistencia y proyectos guardados (.bsproj incluido, vía validarBloque).
 - Compatibilidad total con proyectos antiguos (offset ausente = 0) y con el flujo previo (mover/cortar/eliminar/silenciar/cambiar pista intactos; solapes permitidos como antes).
+
+---
+Task ID: 9-verif (main, Z.ai Code, orquestador)
+Task: Re-verificación post-compacto de la manipulación de bordes estilo Camtasia (Fase 5) y entrega del informe final al usuario (la sesión anterior completó la implementación Task 8-bordes pero agotó el contexto antes de reportar).
+
+Work Log:
+- Leído worklog.md: la Task 8-bordes ya documentaba implementación completa + E2E; git status limpio (todo commiteado). Sin código nuevo que escribir.
+- Confirmado dev server (GET / 200) y dev.log sin errores.
+- Agent Browser E2E real de humo (navegación con coordenadas de ratón reales sobre el canvas): demo con voz → F1 aprobada → F2 (9 escenas, transcripción real ASR+LLM) → F3 (9 CC0 + pista propia del usuario conservada) → F4 aprobada → F5.
+- TEST A (recorte izquierdo bm-0-0): drag real de borde 0→8.4 s ⇒ inicio 8.4, offsetOrigen 8.4, ediciones 1, detalle «Entrada recortada a 00:00:08.388».
+- TEST B (alargado derecho): 20→26 s ⇒ fin 26, detalle «Salida alargada hasta 00:00:26.003» (solape permitido).
+- TEST C (revelado a la izquierda): 8.4→5 s ⇒ inicio 5, offset 5 (revela contenido previo de la pista), detalle «Entrada adelantada a 00:00:05.033».
+- Cursor ew-resize sobre borde verificado en vivo; inspector con «Bloque seleccionado» 00:00:05.000→00:00:26.000 + «la pista arranca en su segundo…» + ayuda de bordes.
+- Reproducción del motor con offsets: timecode avanza (0.892→4.082 s en 3 s); 0 errores de consola y 0 de página.
+- VLM sobre screenshot: confirma hueco de recorte al inicio del carril MÚSICA y asas de borde visibles (el inspector quedó fuera del encuadre pero estaba verificado por snapshot a11y).
+- Limpieza: localStorage + IndexedDB (bardo-studio) borrados, recarga → primera visita limpia, footer pegajoso (gap 0 en página corta), pista propia del usuario intacta en el servidor, 0 proyectos residuales. Navegador cerrado.
+
+Stage Summary:
+- Feature de bordes Camtasia (Fase 5) confirmada operativa de punta a punta en el estado actual del código (sin cambios necesarios): recorte, alargado, revelado, clamps, cursor, inspector, motor en vivo y persistencia. Estado de primera visita restaurado para el usuario.
