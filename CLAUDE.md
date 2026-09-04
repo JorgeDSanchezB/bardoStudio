@@ -1,5 +1,7 @@
 # CLAUDE.md — Bardo Studio
 
+> Documentación completa en `docs/`: [`architecture.md`](docs/architecture.md) (arquitectura), [`current-state.md`](docs/current-state.md) (estado), [`decisions/`](docs/decisions/) (ADRs 001–010). Bitácora por tarea: `worklog.md`. Este archivo es el punto de entrada operativo (comandos + reglas); mantenlo sincronizado con `AGENTS.md`.
+
 ## Qué es este proyecto
 
 **Bardo Studio**: app web (Next.js 16 App Router + TypeScript + shadcn/ui + Tailwind 4) que genera la banda sonora de narraciones de 3+ horas con pipeline auditable de **6 fases**, cada una con puerta de aprobación:
@@ -66,3 +68,19 @@ Pipeline 6/6 fases completo y verificado E2E. Últimas features: importación de
 ## Flujo de verificación obligatorio
 
 Tras cualquier cambio: `bun run lint` + `bunx tsc --noEmit` + revisar `dev.log` + **agent-browser E2E real** (open → snapshot -c → click @refs → `agent-browser errors`/`console` vacíos) con el flujo dorado (demo voz → aprobar 1→4 → editar en 5). Limpiar localStorage (`bardo-project-v1`) + IndexedDB (`bardo-studio`) al terminar y confirmar primera visita limpia. Registro de trabajo en `worklog.md` (anexar, nunca sobrescribir).
+
+## Mapa de documentación
+
+```
+README.md                    — visión general del producto y cómo empezar
+CLAUDE.md / AGENTS.md        — este documento (guía de agente, espejos)
+docs/architecture.md         — arquitectura: pipeline, módulos, API, modelo de datos, persistencia
+docs/current-state.md        — estado actual por fase, hitos, limitaciones, datos vivos
+docs/decisions/001…010-*.md — ADRs: database, authentication, audio-processing,
+                              canvas-timeline, web-audio-engine, resumable-transcription,
+                              edge-trim-offset, project-persistence, user-music,
+                              ui-language-palette
+worklog.md                   — bitácora acumulativa por Task ID (historia primaria)
+```
+
+Reglas de la documentación: nuevas decisiones → nuevo ADR numerado en `docs/decisions/` (formato Contexto/Decisión/Alternativas/Consecuencias); cambios de arquitectura o estado → actualizar `architecture.md`/`current-state.md` y reflejar la línea relevante aquí y en `AGENTS.md`; cada entrega → anexar sección en `worklog.md`.

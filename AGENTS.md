@@ -1,6 +1,6 @@
 # AGENTS.md — Bardo Studio
 
-> Guía de agente para contribuir a este repositorio. Fuente de verdad espejada en `CLAUDE.md`; mantener ambas sincronizadas al cambiar arquitectura o convenciones. Bitácora detallada de cada entrega: `worklog.md` (anexar, nunca sobrescribir).
+> Guía de agente para contribuir a este repositorio. Fuente de verdad espejada en `CLAUDE.md`; mantener ambas sincronizadas al cambiar arquitectura o convenciones. Documentación completa en `docs/` (arquitectura, estado, ADRs); bitácora detallada de cada entrega en `worklog.md` (anexar, nunca sobrescribir).
 
 ## Qué es
 
@@ -49,4 +49,20 @@
 
 ## Estado actual
 
-Pipeline 6/6 completo y verificado. Últimos hitos: música propia (Fase 3), proyectos guardables/abribles con `.bsproj` (estilo Camtasia) y **recorte/alargado de bordes por arrastre en Fase 5** con `offsetOrigen` persistido (motor en vivo + render offline + cuchilla con continuidad). Ver detalle y E2E en `worklog.md` (Tasks 7-mus, 8-bordes, 9-verif).
+Pipeline 6/6 completo y verificado. Últimos hitos: música propia (Fase 3), proyectos guardables/abribles con `.bsproj` (estilo Camtasia) y **recorte/alargado de bordes por arrastre en Fase 5** con `offsetOrigen` persistido (motor en vivo + render offline + cuchilla con continuidad). Ver detalle y E2E en `worklog.md` (Tasks 7-mus, 8-bordes, 9-verif) y el resumen por fase en `docs/current-state.md`.
+
+## Mapa de documentación
+
+```
+README.md                    — visión general del producto y cómo empezar
+CLAUDE.md / AGENTS.md        — guías de agente (espejos; comandos, reglas, verificación)
+docs/architecture.md         — arquitectura: pipeline, módulos, API, modelo de datos, persistencia
+docs/current-state.md        — estado actual por fase, hitos, limitaciones, datos vivos
+docs/decisions/001…010-*.md — ADRs: database, authentication, audio-processing,
+                              canvas-timeline, web-audio-engine, resumable-transcription,
+                              edge-trim-offset, project-persistence, user-music,
+                              ui-language-palette
+worklog.md                   — bitácora acumulativa por Task ID (historia primaria)
+```
+
+Reglas de la documentación: nuevas decisiones → nuevo ADR numerado en `docs/decisions/` (Contexto/Decisión/Alternativas/Consecuencias); cambios de arquitectura o estado → actualizar `docs/architecture.md`/`docs/current-state.md` y reflejar la línea relevante aquí y en `CLAUDE.md`; cada entrega → anexar sección en `worklog.md`.

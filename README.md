@@ -1,0 +1,68 @@
+# Bardo Studio
+
+Musicalización **auditable** de narraciones largas (3+ horas): carga la narración y la app transcribe, analiza la tensión dramática, asigna música por escena, mezcla automáticamente con ducking y te deja editarla como en **Camtasia Studio** antes de exportar los archivos finales.
+
+Todo corre **en local**: el análisis de audio ocurre en tu navegador, la música es CC0 (sintetizada) o **la tuya**, y los proyectos se guardan en tu equipo.
+
+## Cómo empezar
+
+```bash
+bun run dev   # servidor en http://localhost:3000 (puerto 3000)
+```
+
+Abre la app y pulsa **«Demo con voz real (recomendada)»** para recorrer el pipeline completo en 3 minutos de audio.
+
+## El pipeline de 6 fases
+
+| Fase | Qué hace | Puerta |
+|---|---|---|
+| 1 · Ingestión | Picos + envolvente RMS, detección de silencios ajustable en vivo | Aprobar silencios |
+| 2 · Transcripción | ASR reanudable por bloques + tensión 0–100 y ánimo por escena (LLM); curva corregible | Aprobar curva |
+| 3 · Música | Biblioteca CC0 (9 pistas) + **importa tu propia música** (WAV/MP3/OGG/M4A ≤100 MB) | Aprobar banda sonora |
+| 4 · Mezcla automática | Bloques por escena, crossfades, ducking según voz y silencios | Aprobar arreglo |
+| 5 · Editor tipo Camtasia | Escucha en vivo: cuchilla, mover bloques, **recortar/alargar por los bordes** (con bucle automático), silenciar, cambiar pista | Aprobar mezcla |
+| 6 · Exportación | Render offline: mezcla + stems (voz/música) + informe PDF | Descarga |
+
+## Características destacadas
+
+- **Edición por bordes estilo Camtasia**: mantén pulsado el borde de un bloque para comprimirlo o alargarlo; el borde izquierdo decide en qué segundo del tema original entra la música y el derecho estira la pista en bucle.
+- **Proyectos guardables**: «Guardar / Guardar como copia / Abrir / Eliminar», archivo portátil **`.bsproj`** con el análisis incrustado y re-adjunte de audio tras recargar (como Camtasia).
+- **Tu música**: importación múltiple, metadatos editables, banda de tensión sugerida por la energía real del archivo; los archivos originales **nunca se re-codifican**.
+- **Trazabilidad**: cada edición queda registrada («Entrada recortada a 00:00:08.388»…) y el informe PDF documenta todo el proceso.
+- **Archivos de 3+ horas**: la línea de tiempo es virtualizada (se dibuja solo lo visible) y el análisis va por bloques ≤5 min con RAM acotada.
+
+## Stack
+
+Next.js 16 (App Router) · TypeScript 5 · Tailwind CSS 4 · shadcn/ui · Zustand (+persist + IndexedDB) · Web Audio API · Canvas 2D · z-ai-web-dev-sdk (ASR + LLM, solo backend).
+
+## Documentación
+
+| Documento | Contenido |
+|---|---|
+| [`CLAUDE.md`](CLAUDE.md) / [`AGENTS.md`](AGENTS.md) | Guía de agente: comandos, reglas del proyecto, protocolo de verificación |
+| [`docs/architecture.md`](docs/architecture.md) | Arquitectura completa: pipeline, módulos, modelo de datos, persistencia, API |
+| [`docs/current-state.md`](docs/current-state.md) | Estado actual del proyecto y limitaciones conocidas |
+| [`docs/decisions/`](docs/decisions/) | Decisiones de arquitectura (ADRs) numeradas y contextuadas |
+| [`worklog.md`](worklog.md) | Bitácora de trabajo acumulativa por tarea (fuente primaria de historia) |
+
+## Estructura del repositorio
+
+```
+├── AGENTS.md            # guía de agente (espejo de CLAUDE.md)
+├── CLAUDE.md            # guía de agente principal
+├── README.md            # este archivo
+├── docs/
+│   ├── architecture.md  # arquitectura técnica
+│   ├── current-state.md # estado actual
+│   └── decisions/       # ADRs: 001-database, 002-authentication, …
+├── config/              # config.json (Mapa de Atributos Dinámicos)
+├── db/                  # proyectos guardados + user-music (originales)
+├── prisma/              # schema.prisma (disponible, aún sin uso activo)
+├── public/demo/         # WAVs demo deterministas
+├── scripts/             # generador del demo sintético
+├── src/                 # aplicación (app/, components/, lib/, store/)
+├── tests/               # reservado para pruebas
+└── worklog.md           # bitácora de trabajo
+```
+
+> Nota de licencia sobre la música: la biblioteca CC0 se sintetiza localmente y la música que importes sigue siendo tuya; los archivos se guardan tal cual en tu equipo.

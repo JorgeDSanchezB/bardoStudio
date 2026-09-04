@@ -266,3 +266,18 @@ Work Log:
 
 Stage Summary:
 - Documentación de agente disponible: CLAUDE.md y AGENTS.md en la raíz, sincronizados, con toda la memoria operativa del proyecto (arquitectura, convenciones, reglas duras, protocolo de verificación y estado). Futuras sesiones pueden retomar sin re-explorar.
+
+---
+Task ID: 11-docs (main, Z.ai Code)
+Task: Estructurar la documentación del proyecto según el layout pedido por el usuario (README.md + docs/architecture.md + docs/current-state.md + docs/decisions/NNN-*.md, con AGENTS.md/CLAUDE.md en la raíz).
+
+Work Log:
+- Creado README.md: qué es Bardo Studio, cómo empezar (bun run dev + demo), tabla del pipeline de 6 fases, características destacadas (bordes Camtasia, proyectos/.bsproj, música propia, trazabilidad, 3+h virtualizado), stack, tabla de documentación y árbol del repositorio.
+- Creado docs/architecture.md: diagrama ASCII general (navegador/servidor), principios rectores, frontend (page.tsx única ruta + tabla de componentes bardo + store), pipeline fase por fase (1-6 con librerías y archivos concretos), capas de persistencia (localStorage/IndexedDB/db//.bsproj + pack BSAN), tabla completa de la API, modelo de datos (tipos clave incl. BloqueMusica.offsetOrigen) y convenciones de implementación.
+- Creado docs/current-state.md: estado 6/6 verificado, tabla de funcionalidad por fase, hitos recientes (7-mus, 8-bordes, 9-verif, 10/11-docs), datos vivos del servidor (pista propia del usuario a conservar, sin proyectos residuales), limitaciones conocidas (429 gestionados, sin undo granular, Prisma sin uso activo) e ideas futuras.
+- Creados 10 ADRs en docs/decisions/ con formato Contexto/Decisión/Alternativas/Consecuencias: 001-database (persistencia en 4 capas, sin Prisma activo), 002-authentication (sin auth, local monousuario), 003-audio-processing (análisis 100% navegador por bloques ≤5 min), 004-canvas-timeline (canvas propio virtualizado), 005-web-audio-engine (doble motor vivo/offline con misma fórmula de offset), 006-resumable-transcription (ASR sub-bloques ≤28 s reanudable), 007-edge-trim-offset (bordes estilo Camtasia con offsetOrigen), 008-project-persistence (.bsproj + servidor estilo Camtasia), 009-user-music (importar sin re-codificar), 010-ui-language-palette (español + zinc/ámbar/esmeralda sin azul).
+- Actualizados CLAUDE.md y AGENTS.md: nota superior apuntando a docs/ y nueva sección «Mapa de documentación» con reglas de mantenimiento (nuevas decisiones → ADR numerado; cambios de arquitectura/estado → actualizar docs + espejos; cada entrega → worklog).
+- Sin cambios en código de la app ni en el dev server.
+
+Stage Summary:
+- Estructura de documentación completa y operativa: README.md + docs/ (architecture, current-state, decisions/001-010) + CLAUDE.md/AGENTS.md en raíz sincronizados con el mapa. Toda decisión arquitectónica relevante del proyecto queda documentada como ADR con su contexto y alternativas.
