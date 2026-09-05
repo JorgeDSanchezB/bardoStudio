@@ -37,6 +37,7 @@ import {
 import type { ExportInfo } from "@/lib/fase6/informe";
 import type {
   SfxCategoria,
+  SfxClip,
   SfxConfig,
   SfxDef,
   SfxDefectos,
@@ -90,11 +91,17 @@ export interface FaseSfxEstado {
   resumen: SfxResumen | null;
   /** config en vigor (sembrada desde /api/sfx-config; editable en el panel) */
   config: SfxConfig | null;
-  /** biblioteca (id → archivo/duración); volátil pero persistida por robustez */
+  /** biblioteca (id → archivo/duración); persistida por robustez */
   biblioteca: SfxDef[] | null;
   configTouched: boolean;
   error: string | null;
   aprobadaEn: number | null;
+  /** clips materializados para el editor (Fase 5) tras aprobar la Fase 4 */
+  clips: SfxClip[] | null;
+  /** nº de ediciones sobre clips (Fase 5) */
+  edicionesSfx: number;
+  /** detalle de las últimas ediciones de clips (auditoría) */
+  detalleEdicionesSfx: string[];
 }
 
 const faseSfxInicial: FaseSfxEstado = {
@@ -106,6 +113,9 @@ const faseSfxInicial: FaseSfxEstado = {
   configTouched: false,
   error: null,
   aprobadaEn: null,
+  clips: null,
+  edicionesSfx: 0,
+  detalleEdicionesSfx: [],
 };
 
 // ---------------- Fase 3: biblioteca musical + asignación ----------------
@@ -347,6 +357,13 @@ interface ProjectActions {
   reemplazarConfigSfx: (config: SfxConfig) => void;
   aprobarFaseSfx: () => void;
   reabrirFaseSfx: () => void;
+  // ---- Fase 2.5 → Fase 5: clips de efectos ----
+  /** materializa los clips editables desde los eventos aprobados */
+  materializarClipsSfx: (clips: SfxClip[]) => void;
+  /** aplica una edición sobre los clips (mover/cortar/recortar/silenciar…) */
+  aplicarEdicionClipsSfx: (clips: SfxClip[], detalle: string) => void;
+  /** añade un archivo importado por el usuario a la biblioteca */
+  añadirSfxBiblioteca: (def: SfxDef) => void;
   // ---- Fase 3 ----
   setCatalogoFase3: (pistas: Pista[]) => void;
   autoAsignarFase3: () => void;
@@ -768,6 +785,34 @@ function validarSfxDef(v: unknown): SfxDef | null {
   };
 }
 
+/** Valida un clip SFX de la línea de tiempo (persistencia/.bsproj). */
+function validarSfxClip(v: unknown): SfxClip | null {
+  const f = filaObjeto(v);
+  if (!f) return null;
+  if (typeof f.id !== "string" || !f.id) return null;
+  const sfxId = strO(f.sfxId, "", 64);
+  if (!sfxId) return null;
+  const inicio = numO(f.inicio, 0, 0, 24 * 3600);
+  const fin = numO(f.fin, inicio + 0.3, inicio, 24 * 3600 + 60);
+  const dur = fin - inicio;
+  return {
+    id: f.id.slice(0, 80),
+    eventoId: strO(f.eventoId, "", 80),
+    palabra: strO(f.palabra, "", 40),
+    categoria: strO(f.categoria, "manual", 64) || "manual",
+    sfxId,
+    inicio,
+    fin: Math.max(inicio + 0.1, fin),
+    fadeInSeg: numO(f.fadeInSeg, 0.5, 0, dur / 2),
+    fadeOutSeg: numO(f.fadeOutSeg, 0.5, 0, dur / 2),
+    muted: boolO(f.muted, false),
+    offsetOrigen: numO(f.offsetOrigen, 0, 0, 3600),
+    volumenDb: numO(f.volumenDb, -12, -60, 6),
+    origen:
+      f.origen === "edicion" || f.origen === "manual" ? f.origen : "auto",
+  };
+}
+
 
 function validarResumenFase2(v: unknown): Fase2Resumen | null {
   const f = filaObjeto(v);
@@ -1073,6 +1118,10 @@ function validarEstadoProyecto(bruto: unknown): EstadoValidado | null {
     .map(validarSfxDef)
     .filter((b): b is SfxDef => b !== null)
     .slice(0, 200);
+  const clipsSfx = (Array.isArray(fsx.clips) ? fsx.clips : [])
+    .map(validarSfxClip)
+    .filter((c): c is SfxClip => c !== null)
+    .slice(0, 600);
   const rsfx = filaObjeto(fsx.resumen);
   const statusSfx: FaseSimpleStatus =
     fsx.status === "approved"
@@ -1099,6 +1148,16 @@ function validarEstadoProyecto(bruto: unknown): EstadoValidado | null {
     error: typeof fsx.error === "string" ? fsx.error.slice(0, 400) : null,
     aprobadaEn:
       statusSfx === "approved" ? numO(fsx.aprobadaEn, 0, 0, 4102444800000) : null,
+    // los clips solo tienen sentido con la detección aprobada
+    clips:
+      statusSfx === "idle" || statusSfx === "error" ? null : clipsSfx,
+    edicionesSfx: Math.trunc(numO(fsx.edicionesSfx, 0, 0, 100_000)),
+    detalleEdicionesSfx: (
+      Array.isArray(fsx.detalleEdicionesSfx) ? fsx.detalleEdicionesSfx : []
+    )
+      .filter((s): s is string => typeof s === "string")
+      .map((s) => s.slice(0, 200))
+      .slice(0, 8),
   };
 
   return {
@@ -1540,7 +1599,15 @@ export const useProjectStore = create<ProjectStore>()(
             resumen: null,
             error: null,
             aprobadaEn: null,
+            clips: null,
+            edicionesSfx: 0,
+            detalleEdicionesSfx: [],
           },
+          // al re-detectar, la mezcla/editor/exportación pierden vigencia
+          fase3: fase3Inicial,
+          fase4: fase4Inicial,
+          fase5: fase5Inicial,
+          fase6: fase6Inicial,
         }),
 
       ajustarSfxEvento: (id, patch) =>
@@ -1669,12 +1736,57 @@ export const useProjectStore = create<ProjectStore>()(
 
       reabrirFaseSfx: () =>
         set({
-          faseSfx: { ...get().faseSfx, status: "review", aprobadaEn: null },
+          faseSfx: {
+            ...get().faseSfx,
+            status: "review",
+            aprobadaEn: null,
+            clips: null,
+            edicionesSfx: 0,
+            detalleEdicionesSfx: [],
+          },
           fase3: fase3Inicial,
           fase4: fase4Inicial,
           fase5: fase5Inicial,
           fase6: fase6Inicial,
         }),
+
+      // ---------- acciones de clips SFX (Fase 5) ----------
+
+      materializarClipsSfx: (clips) =>
+        set({
+          faseSfx: {
+            ...get().faseSfx,
+            clips: clips.map((c) => ({
+              ...c,
+              offsetOrigen: Math.max(0, c.offsetOrigen),
+            })),
+            edicionesSfx: 0,
+            detalleEdicionesSfx: [],
+          },
+        }),
+
+      aplicarEdicionClipsSfx: (clips, detalle) => {
+        const f = get().faseSfx;
+        set({
+          faseSfx: {
+            ...f,
+            clips,
+            edicionesSfx: f.edicionesSfx + 1,
+            detalleEdicionesSfx: [...f.detalleEdicionesSfx, detalle].slice(-8),
+          },
+        });
+      },
+
+      añadirSfxBiblioteca: (def) => {
+        const f = get().faseSfx;
+        if (f.biblioteca?.some((b) => b.id === def.id)) return;
+        set({
+          faseSfx: {
+            ...f,
+            biblioteca: [...(f.biblioteca ?? []), def],
+          },
+        });
+      },
 
       // ---------- acciones de Fase 3 ----------
 
@@ -1737,6 +1849,12 @@ export const useProjectStore = create<ProjectStore>()(
           fase4: fase4Inicial,
           fase5: fase5Inicial,
           fase6: fase6Inicial,
+          faseSfx: {
+            ...get().faseSfx,
+            clips: null,
+            edicionesSfx: 0,
+            detalleEdicionesSfx: [],
+          },
         }),
 
       rehacerFase3: () => {
@@ -1750,6 +1868,12 @@ export const useProjectStore = create<ProjectStore>()(
           fase4: fase4Inicial,
           fase5: fase5Inicial,
           fase6: fase6Inicial,
+          faseSfx: {
+            ...get().faseSfx,
+            clips: null,
+            edicionesSfx: 0,
+            detalleEdicionesSfx: [],
+          },
         });
         get().autoAsignarFase3();
       },
@@ -1798,6 +1922,12 @@ export const useProjectStore = create<ProjectStore>()(
           fase4: { ...get().fase4, status: "review", aprobadaEn: null },
           fase5: fase5Inicial,
           fase6: fase6Inicial,
+          faseSfx: {
+            ...get().faseSfx,
+            clips: null,
+            edicionesSfx: 0,
+            detalleEdicionesSfx: [],
+          },
         }),
 
       // ---------- acciones de Fase 5 ----------

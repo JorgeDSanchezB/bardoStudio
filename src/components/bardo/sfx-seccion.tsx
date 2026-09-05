@@ -33,6 +33,7 @@ import {
   Volume2,
   Plus,
   FileAudio,
+  Upload,
 } from "lucide-react";
 import { useProjectStore } from "@/store/project";
 import { detectarSfxFondo } from "@/lib/sfx/detectar-cliente";
@@ -57,7 +58,10 @@ export function SfxSeccion() {
   const [preview, setPreview] = useState<{ nombre: string; src: string } | null>(
     null
   );
+  const [subiendo, setSubiendo] = useState(false);
+  const [errorSubida, setErrorSubida] = useState<string | null>(null);
   const contadorManual = useRef(0);
+  const inputArchivoRef = useRef<HTMLInputElement | null>(null);
 
   const duracion = analysis?.durationSec ?? 0;
   const config = faseSfx.config;
@@ -103,6 +107,30 @@ export function SfxSeccion() {
       vivo = false;
     };
   }, [config, biblioteca]);
+
+  // ---------- incorporar los SFX propios del servidor (si aún no están) ----------
+  useEffect(() => {
+    let vivo = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/user-sfx");
+        if (!res.ok) return;
+        const data = (await res.json()) as { sfx?: SfxDef[] };
+        if (!vivo || !Array.isArray(data.sfx) || data.sfx.length === 0) return;
+        const st = useProjectStore.getState();
+        const existentes = new Set((st.faseSfx.biblioteca ?? []).map((b) => b.id));
+        for (const def of data.sfx) {
+          if (!def?.id || existentes.has(def.id)) continue;
+          st.añadirSfxBiblioteca(def);
+        }
+      } catch {
+        /* sin efectos propios: opcional */
+      }
+    })();
+    return () => {
+      vivo = false;
+    };
+  }, []);
 
   // ---------- detección automática (Web Worker, respaldo inline) ----------
   // Nota: el «en curso» vive en un ref y el resultado se valida contra el
@@ -167,6 +195,59 @@ export function SfxSeccion() {
   const reproducir = (def: SfxDef | undefined) => {
     if (!def) return;
     setPreview({ nombre: def.nombre, src: def.archivo });
+  };
+
+  // ---------- importar un SFX propio (WAV/MP3…) ----------
+  const importarPropio = async (archivo: File) => {
+    setErrorSubida(null);
+    setSubiendo(true);
+    try {
+      // decodificar en el cliente para medir la duración real
+      const ab = await archivo.arrayBuffer();
+      const Ctor =
+        window.AudioContext ??
+        (window as unknown as { webkitAudioContext: typeof AudioContext })
+          .webkitAudioContext;
+      const ctx = new Ctor();
+      let durSec = 3;
+      try {
+        const buf = await ctx.decodeAudioData(ab.slice(0));
+        durSec = Math.max(0.1, Math.min(600, buf.duration));
+      } catch {
+        throw new Error(
+          "El navegador no pudo decodificar el archivo (¿es un audio válido?)."
+        );
+      } finally {
+        void ctx.close().catch(() => undefined);
+      }
+      const nombre = archivo.name.replace(/\.[^.]+$/, "").slice(0, 80) || "efecto";
+      const form = new FormData();
+      form.append("archivo", archivo);
+      form.append("meta", JSON.stringify({ nombre, durSec }));
+      const res = await fetch("/api/user-sfx", { method: "POST", body: form });
+      if (!res.ok) {
+        let detalle = `HTTP ${res.status}`;
+        try {
+          const j = (await res.json()) as { error?: string };
+          if (j?.error) detalle = j.error;
+        } catch {
+          /* respuesta no JSON */
+        }
+        throw new Error(detalle);
+      }
+      const data = (await res.json()) as { sfx: SfxDef };
+      if (data.sfx) {
+        useProjectStore.getState().añadirSfxBiblioteca(data.sfx);
+        setPreview({ nombre: data.sfx.nombre, src: data.sfx.archivo });
+      }
+    } catch (e) {
+      setErrorSubida(
+        e instanceof Error ? e.message : "No se pudo importar el efecto."
+      );
+    } finally {
+      setSubiendo(false);
+      if (inputArchivoRef.current) inputArchivoRef.current.value = "";
+    }
   };
 
   const añadirManual = (def: SfxDef) => {
@@ -509,16 +590,52 @@ export function SfxSeccion() {
             <CardHeader className="pb-2">
               <CardTitle className="flex flex-wrap items-center gap-2 text-xs text-zinc-400">
                 <Sparkles className="h-3.5 w-3.5 text-amber-400" />
-                Biblioteca de efectos · CC0
+                Biblioteca de efectos · CC0 + propios
                 <Badge variant="outline" className="text-[10px] text-zinc-500">
-                  {biblioteca.length} sintetizados localmente
+                  {biblioteca.length} archivos
                 </Badge>
                 <span className="text-[10px] text-zinc-600">
                   añade en la posición del cursor de reproducción
                 </span>
+                <input
+                  ref={inputArchivoRef}
+                  type="file"
+                  accept="audio/*,.wav,.mp3,.m4a,.ogg,.flac,.opus,.aac,.webm"
+                  className="sr-only"
+                  aria-label="Importar un efecto de sonido propio"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) void importarPropio(f);
+                  }}
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="ml-auto h-8 gap-1.5"
+                  disabled={subiendo}
+                  onClick={() => inputArchivoRef.current?.click()}
+                >
+                  {subiendo ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Upload className="h-3.5 w-3.5" />
+                  )}
+                  Importar SFX propio
+                </Button>
               </CardTitle>
             </CardHeader>
             <CardContent className="pb-4">
+              {errorSubida && (
+                <p className="mb-2 rounded border border-rose-900/60 bg-rose-950/30 px-2 py-1 text-[10px] text-rose-300">
+                  {errorSubida}
+                </p>
+              )}
+              {subiendo && (
+                <p className="mb-2 flex items-center gap-2 text-[10px] text-amber-300/90">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Decodificando y subiendo el efecto al servidor local…
+                </p>
+              )}
               <div className="max-h-72 overflow-y-auto scroll-thin rounded-md border border-zinc-800/80">
                 <Table>
                   <TableHeader className="sticky top-0 z-10 bg-zinc-900">

@@ -5,7 +5,7 @@
 
 /** Registro de un archivo exportado (Fase 6). */
 export interface ExportInfo {
-  tipo: "mezcla" | "voz" | "musica";
+  tipo: "mezcla" | "voz" | "musica" | "efectos";
   nombre: string;
   bytes: number;
   durSec: number;
@@ -53,6 +53,28 @@ export interface InformePDF {
       tension: number;
       pistaId: string;
       titulo: string;
+      origen: string;
+    }>;
+  };
+  /** pista de efectos (Fase 2.5): detección, mezcla y clips editados */
+  sfx: {
+    detectados: number;
+    activos: number;
+    categorias: number;
+    palabraTop: string;
+    nivelDb: number;
+    crossfadeSeg: number;
+    respetarDucking: boolean;
+    clipsEnMezcla: number;
+    clipsSilenciados: number;
+    ediciones: number;
+    clips: Array<{
+      palabra: string;
+      categoria: string;
+      sfx: string;
+      inicio: number;
+      durSeg: number;
+      volumenDb: number;
       origen: string;
     }>;
   };

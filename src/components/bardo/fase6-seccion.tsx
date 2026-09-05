@@ -29,6 +29,7 @@ import {
   type InformePDF,
   type ExportInfo,
 } from "@/lib/fase6/informe";
+import { SFX_DEFECTOS } from "@/lib/sfx/tipos";
 import { formatBytes, formatDurSmart } from "@/lib/format";
 import { GateFase } from "./gate-fase";
 
@@ -48,6 +49,7 @@ export function Fase6Seccion(props: Fase6SeccionProps) {
   const fase4 = useProjectStore((s) => s.fase4);
   const fase5 = useProjectStore((s) => s.fase5);
   const fase6 = useProjectStore((s) => s.fase6);
+  const faseSfx = useProjectStore((s) => s.faseSfx);
   const fileMeta = useProjectStore((s) => s.fileMeta);
   const analysis = useProjectStore((s) => s.analysis);
   const silences = useProjectStore((s) => s.silences);
@@ -64,8 +66,10 @@ export function Fase6Seccion(props: Fase6SeccionProps) {
 
   const params = fase6.params;
   const aprobada = fase6.status === "approved";
+  const clipsSfx = faseSfx.clips ?? [];
+  const defectosSfx = faseSfx.config?.defectos ?? SFX_DEFECTOS;
 
-  // envolventes definitivas (con los bloques editados de la Fase 5)
+  // envolventes definitivas (con los bloques y clips editados de la Fase 5)
   const mezclaFinal = useMemo(() => {
     if (!fase5.bloques || !analysis || analysis.envDb.length === 0) return null;
     try {
@@ -79,6 +83,7 @@ export function Fase6Seccion(props: Fase6SeccionProps) {
         silencios: silences,
         params: fase5.params ?? fase4.params,
         bloquesOverride: fase5.bloques,
+        sfxRespetarDucking: defectosSfx.respetarDucking,
       });
     } catch {
       return null;
@@ -92,6 +97,7 @@ export function Fase6Seccion(props: Fase6SeccionProps) {
     fase3.asignaciones,
     silences,
     thresholds.dbThreshold,
+    defectosSfx.respetarDucking,
   ]);
 
   if (fase5.status !== "approved") return null;
@@ -116,9 +122,20 @@ export function Fase6Seccion(props: Fase6SeccionProps) {
         const p = catalogo.find((x) => x.id === b.pistaId);
         if (!p) continue;
         const ab = await fetch(p.archivo)
-          .then((r) => r.arrayBuffer())
+          .then((r) => (r.ok ? r.arrayBuffer() : null))
           .catch(() => null);
         if (ab) arraysPistas.set(b.pistaId, ab);
+      }
+      // archivos SFX usados por los clips (biblioteca CC0 + propios)
+      const arraysSfx = new Map<string, ArrayBuffer>();
+      for (const c of clipsSfx) {
+        if (arraysSfx.has(c.sfxId)) continue;
+        const d = (faseSfx.biblioteca ?? []).find((x) => x.id === c.sfxId);
+        if (!d) continue;
+        const ab = await fetch(d.archivo)
+          .then((r) => (r.ok ? r.arrayBuffer() : null))
+          .catch(() => null);
+        if (ab) arraysSfx.set(c.sfxId, ab);
       }
 
       const res = await renderizarMezcla({
@@ -132,6 +149,9 @@ export function Fase6Seccion(props: Fase6SeccionProps) {
         colaFinalSeg: params.colaFinalSeg,
         normalizar: params.normalizar,
         destinoDb: -1,
+        arraysSfx,
+        clipsSfx,
+        duckSfxDb: mezclaFinal.duckSfxDb,
         onProgreso: setProgreso,
       });
 
@@ -153,8 +173,10 @@ export function Fase6Seccion(props: Fase6SeccionProps) {
       if (params.incluirStems) {
         const blobVoz = codificarWavEstereo(res.voz, res.meta.sampleRate);
         const blobMus = codificarWavEstereo(res.musica, res.meta.sampleRate);
+        const blobSfx = codificarWavEstereo(res.sfx, res.meta.sampleRate);
         blobRef.current.set("voz", blobVoz);
         blobRef.current.set("musica", blobMus);
+        blobRef.current.set("efectos", blobSfx);
         nuevos.push(
           {
             tipo: "voz",
@@ -175,6 +197,16 @@ export function Fase6Seccion(props: Fase6SeccionProps) {
             picoDb: res.meta.picoDb,
             creadoEn: Date.now(),
             blob: blobMus,
+          },
+          {
+            tipo: "efectos",
+            nombre: `${baseNombre}-efectos-${stamp}.wav`,
+            bytes: blobSfx.size,
+            durSec: res.meta.durSec,
+            rmsDb: res.meta.rmsDb,
+            picoDb: res.meta.picoDb,
+            creadoEn: Date.now(),
+            blob: blobSfx,
           }
         );
       }
@@ -268,6 +300,38 @@ export function Fase6Seccion(props: Fase6SeccionProps) {
             };
           }),
         },
+        sfx: {
+          detectados: faseSfx.eventos.length,
+          activos: faseSfx.eventos.filter((e) => e.activo).length,
+          categorias:
+            faseSfx.resumen?.categorias ??
+            new Set(faseSfx.eventos.map((e) => e.categoria)).size,
+          palabraTop: faseSfx.resumen?.palabraTop ?? "—",
+          nivelDb: defectosSfx.nivelDb,
+          crossfadeSeg: defectosSfx.crossfadeSeg,
+          respetarDucking: defectosSfx.respetarDucking,
+          clipsEnMezcla: clipsSfx.length,
+          clipsSilenciados: clipsSfx.filter((c) => c.muted).length,
+          ediciones: faseSfx.edicionesSfx,
+          clips: clipsSfx
+            .slice()
+            .sort((a, b) => a.inicio - b.inicio)
+            .slice(0, 40)
+            .map((c) => {
+              const d = (faseSfx.biblioteca ?? []).find(
+                (x) => x.id === c.sfxId
+              );
+              return {
+                palabra: c.palabra,
+                categoria: c.categoria,
+                sfx: d?.nombre ?? c.sfxId,
+                inicio: Math.round(c.inicio * 10) / 10,
+                durSeg: Math.round((c.fin - c.inicio) * 10) / 10,
+                volumenDb: c.volumenDb,
+                origen: c.origen,
+              };
+            }),
+        },
         mezcla: {
           ...(fase5.params ?? fase4.params),
           bloques: fase5.bloques?.length ?? 0,
@@ -281,7 +345,9 @@ export function Fase6Seccion(props: Fase6SeccionProps) {
               : "sin ediciones manuales",
         },
         exportacion: {
-          formato: `WAV 16-bit · 44.1 kHz · estéreo${params.incluirStems ? " (+stems)" : ""}`,
+          formato: `WAV 16-bit · 44.1 kHz · estéreo${
+            params.incluirStems ? " (+stems voz/música/efectos)" : ""
+          }`,
           normalizado: params.normalizar,
           bytes: ultima?.bytes ?? 0,
           rmsDb: ultima?.rmsDb ?? 0,
@@ -304,6 +370,14 @@ export function Fase6Seccion(props: Fase6SeccionProps) {
             aprobadaEn:
               fase2.aprobadaEn && fase2.status === "approved"
                 ? new Date(fase2.aprobadaEn).toISOString()
+                : null,
+          },
+          {
+            fase: 2.5,
+            titulo: "Efectos de sonido",
+            aprobadaEn:
+              faseSfx.aprobadaEn && faseSfx.status === "approved"
+                ? new Date(faseSfx.aprobadaEn).toISOString()
                 : null,
           },
           {
@@ -365,11 +439,13 @@ export function Fase6Seccion(props: Fase6SeccionProps) {
         </h2>
         <p className="max-w-3xl text-sm leading-relaxed text-zinc-400">
           Render <strong className="text-zinc-200">offline</strong> de la mezcla
-          aprobada (voz + música, ducking y crossfades horneados),{" "}
+          aprobada (voz + música + <strong className="text-zinc-200">efectos</strong>,
+          ducking y crossfades horneados),{" "}
           <strong className="text-zinc-200">normalización de pico</strong>{" "}
-          opcional, <strong className="text-zinc-200">stems</strong> de voz y
-          música, y el <strong className="text-zinc-200">informe PDF</strong>{" "}
-          auditable con toda la trazabilidad del proyecto.
+          opcional, <strong className="text-zinc-200">stems</strong> de voz,
+          música y efectos, y el{" "}
+          <strong className="text-zinc-200">informe PDF</strong> auditable con
+          toda la trazabilidad del proyecto.
         </p>
       </div>
 
@@ -424,7 +500,7 @@ export function Fase6Seccion(props: Fase6SeccionProps) {
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-[11px] font-medium text-zinc-300">
-                  Incluir stems (voz y música)
+                  Incluir stems (voz, música y efectos)
                 </p>
                 <p className="text-[10px] text-zinc-500">
                   Archivos separados listos para re-mezclar.
@@ -437,7 +513,7 @@ export function Fase6Seccion(props: Fase6SeccionProps) {
                 onCheckedChange={(v) =>
                   useProjectStore.getState().setParamsFase6({ incluirStems: v })
                 }
-                aria-label="Incluir stems de voz y música"
+                aria-label="Incluir stems de voz, música y efectos"
               />
             </div>
             <div className="space-y-1.5">
@@ -587,7 +663,7 @@ export function Fase6Seccion(props: Fase6SeccionProps) {
         titulo="Exportación y reporte"
         desbloqueaTexto="cierra el proyecto"
         descripcionPendiente="¿Los archivos suenan bien y el informe refleja el trabajo? Aprueba para dar el proyecto por cerrado."
-        descripcionAprobada="El proyecto está completo: los seis hitos auditados, del análisis a los archivos finales."
+        descripcionAprobada="El proyecto está completo: los siete hitos auditados, del análisis a los archivos finales."
         resumen={[
           {
             etiqueta: "Archivos",
@@ -624,6 +700,7 @@ export function Fase6Seccion(props: Fase6SeccionProps) {
                 {formatDurSmart(analysis?.durationSec ?? 0)} de narración ·{" "}
                 {fase2.escenas.length} escenas analizadas ·{" "}
                 {fase5.bloques?.length ?? 0} bloques musicales ·{" "}
+                {clipsSfx.filter((c) => !c.muted).length} efectos ·{" "}
                 {archivos.length || fase6.exportaciones.length} archivos
                 exportados. Todo el proceso quedó registrado en el informe PDF.
               </p>
@@ -631,7 +708,7 @@ export function Fase6Seccion(props: Fase6SeccionProps) {
                 variant="outline"
                 className="mt-1 border-emerald-700/50 text-[10px] text-emerald-300"
               >
-                6/6 fases aprobadas
+                7/7 fases aprobadas
               </Badge>
             </div>
           </CardContent>

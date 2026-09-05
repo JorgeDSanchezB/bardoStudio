@@ -4,14 +4,17 @@
  * Grafo:
  *   voz ─────────────────────────────► gainVoz ─► analizadorVoz ─┐
  *   [bloque: buffer en bucle ─► gainFade] ─► busMusica (nivel)    │
- *        ─► gainDuck (ducking) ─► analizadorMusica ───────────────┴─► master ─► destino
+ *        ─► gainDuck (ducking) ─► analizadorMusica ───────────────┤
+ *   [clip SFX: buffer en bucle ─► gainFade·vol] ─► busSfx         │
+ *        ─► gainDuckSfx ─► analizadorSfx ─────────────────────────┴─► master ─► destino
  *
  * Las envolventes de nivel y ducking (10 Hz, calculadas en Fase 4) se
  * programan con setValueCurveAtTime en tramos de 60 s; los fundidos de
- * entrada/salida de cada bloque con ramps lineales.
+ * entrada/salida de cada bloque y clip con ramps lineales.
  */
 
 import type { BloqueMusica } from "@/lib/fase4/tipos";
+import type { SfxClip } from "@/lib/sfx/tipos";
 import { clamp } from "@/lib/format";
 
 const HOP = 0.1;
@@ -28,15 +31,23 @@ export interface MotorConfig {
   duckDb: Float32Array;
   hopSec: number;
   duracionSec: number;
+  /** pista de efectos (Fase 5): clips + buffers decodificados + ducking propio */
+  clipsSfx: SfxClip[];
+  buffersSfx: Map<string, AudioBuffer>;
+  duckSfxDb: Float32Array | null;
 }
 
 export interface LecturaMetros {
   vozDb: number;
   musicaDb: number;
+  sfxDb: number;
 }
 
-/** Ganancia del fade de un bloque en el instante t (0..1). */
-function gananciaFade(b: BloqueMusica, t: number): number {
+/** Ganancia del fade de un bloque/clip en el instante t (0..1). */
+function gananciaFade(
+  b: { inicio: number; fin: number; fadeInSeg: number; fadeOutSeg: number },
+  t: number
+): number {
   if (t < b.inicio || t > b.fin + b.fadeOutSeg) return 0;
   if (t < b.inicio + b.fadeInSeg) {
     const d = b.fadeInSeg > 0.001 ? (t - b.inicio) / b.fadeInSeg : 1;
@@ -91,8 +102,11 @@ export class MotorMezcla {
   private gainVoz: GainNode | null = null;
   private busMusica: GainNode | null = null;
   private gainDuck: GainNode | null = null;
+  private busSfx: GainNode | null = null;
+  private gainDuckSfx: GainNode | null = null;
   private analizadorVoz: AnalyserNode | null = null;
   private analizadorMusica: AnalyserNode | null = null;
+  private analizadorSfx: AnalyserNode | null = null;
   private t0 = 0;
   private offset = 0;
   reproduciendo = false;
@@ -144,8 +158,76 @@ export class MotorMezcla {
     this.busMusica = null;
     this.gainDuck = null;
     this.gainVoz = null;
+    this.busSfx = null;
+    this.gainDuckSfx = null;
     this.analizadorVoz = null;
     this.analizadorMusica = null;
+    this.analizadorSfx = null;
+  }
+
+  /**
+   * Monta una fuente de buffer en bucle sobre `destino` con la
+   * automatización de fundidos del bloque/clip, escalada por `volumen`
+   * (música: 1; SFX: ganancia lineal del volumen del clip).
+   */
+  private montarFuente(
+    ctx: AudioContext,
+    destino: GainNode,
+    buffer: AudioBuffer,
+    b: {
+      inicio: number;
+      fin: number;
+      fadeInSeg: number;
+      fadeOutSeg: number;
+      offsetOrigen?: number;
+    },
+    desde: number,
+    t0: number,
+    volumen: number
+  ) {
+    const finTotal = b.fin + b.fadeOutSeg;
+    if (finTotal <= desde + 0.05) return;
+
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    src.loop = true;
+
+    const g = ctx.createGain();
+    src.connect(g);
+    g.connect(destino);
+
+    // arranque: en su inicio o ya en marcha desde `desde`; el punto de
+    // entrada en el archivo es offsetOrigen (recorte de borde) y el archivo
+    // va en bucle, así que se envuelve módulo su duración.
+    const arranca = Math.max(b.inicio, desde);
+    const cuando = t0 + (arranca - desde);
+    const offsetOrigen = Math.max(0, b.offsetOrigen ?? 0);
+    const fase =
+      b.inicio >= desde - 0.001
+        ? offsetOrigen % Math.max(0.1, buffer.duration)
+        : (offsetOrigen + (desde - b.inicio)) % Math.max(0.1, buffer.duration);
+    src.start(cuando, fase);
+
+    const tParada = t0 + (finTotal - desde);
+    if (Number.isFinite(tParada) && tParada > ctx.currentTime) {
+      src.stop(Math.max(tParada, ctx.currentTime + 0.01));
+    }
+
+    // automatización del fade (escalada por el volumen del clip)
+    const v0 = gananciaFade(b, arranca) * volumen;
+    g.gain.setValueAtTime(v0, cuando);
+    const tFinIn = t0 + (b.inicio + b.fadeInSeg - desde);
+    const tFin = t0 + (b.fin - desde);
+    const tOut = t0 + (finTotal - desde);
+    if (tFinIn > cuando + 0.001)
+      g.gain.linearRampToValueAtTime(volumen, tFinIn);
+    if (tFin > Math.max(cuando, tFinIn) + 0.001) {
+      g.gain.linearRampToValueAtTime(volumen, tFin);
+    }
+    if (tOut > cuando + 0.001) g.gain.linearRampToValueAtTime(0, tOut);
+
+    src.onended = null;
+    this.fuentes.push(src);
   }
 
   /** Construye el grafo y arranca la reproducción en `desde` segundos. */
@@ -197,51 +279,39 @@ export class MotorMezcla {
       if (b.muted) continue;
       const buffer = this.cfg.buffersPistas.get(b.pistaId);
       if (!buffer) continue;
-      const finTotal = b.fin + b.fadeOutSeg;
-      if (finTotal <= desde + 0.05) continue;
-
-      const src = ctx.createBufferSource();
-      src.buffer = buffer;
-      src.loop = true;
-
-      const g = ctx.createGain();
-      src.connect(g);
-      g.connect(busMusica);
-
-      // arranque del bloque: en su inicio o ya en marcha desde `desde`.
-      // el punto de entrada en la pista es offsetOrigen (recorte de borde);
-      // la pista va en bucle, así que se envuelve módulo su duración.
-      const arranca = Math.max(b.inicio, desde);
-      const cuando = t0 + (arranca - desde);
-      const offsetOrigen = Math.max(0, b.offsetOrigen ?? 0);
-      const fase =
-        b.inicio >= desde - 0.001
-          ? offsetOrigen % Math.max(0.1, buffer.duration)
-          : (offsetOrigen + (desde - b.inicio)) % Math.max(0.1, buffer.duration);
-      src.start(cuando, fase);
-
-      const tParada = t0 + (finTotal - desde);
-      if (Number.isFinite(tParada) && tParada > ctx.currentTime) {
-        src.stop(Math.max(tParada, ctx.currentTime + 0.01));
-      }
-
-      // automatización del fade del bloque
-      const v0 = gananciaFade(b, arranca);
-      g.gain.setValueAtTime(v0, cuando);
-      const tFinIn = t0 + (b.inicio + b.fadeInSeg - desde);
-      const tFin = t0 + (b.fin - desde);
-      const tOut = t0 + (finTotal - desde);
-      if (tFinIn > cuando + 0.001) g.gain.linearRampToValueAtTime(1, tFinIn);
-      if (tFin > Math.max(cuando, tFinIn) + 0.001) {
-        g.gain.linearRampToValueAtTime(1, tFin);
-      }
-      if (tOut > cuando + 0.001) g.gain.linearRampToValueAtTime(0, tOut);
-
-      src.onended = null;
-      this.fuentes.push(src);
+      this.montarFuente(ctx, busMusica, buffer, b, desde, t0, 1);
     }
 
-    // envolventes (nivel y duck) desde `desde` hasta el final
+    // ---- efectos (SFX): bus propio + ducking propio (configurable) ----
+    const busSfx = ctx.createGain();
+    busSfx.gain.value = 1;
+    const gainDuckSfx = ctx.createGain();
+    gainDuckSfx.gain.value = 1;
+    const anSfx = ctx.createAnalyser();
+    anSfx.fftSize = 2048;
+    busSfx.connect(gainDuckSfx);
+    gainDuckSfx.connect(anSfx);
+    anSfx.connect(master);
+    this.busSfx = busSfx;
+    this.gainDuckSfx = gainDuckSfx;
+    this.analizadorSfx = anSfx;
+
+    for (const c of this.cfg.clipsSfx) {
+      if (c.muted) continue;
+      const buffer = this.cfg.buffersSfx.get(c.sfxId);
+      if (!buffer) continue;
+      this.montarFuente(
+        ctx,
+        busSfx,
+        buffer,
+        c,
+        desde,
+        t0,
+        db2gain(c.volumenDb)
+      );
+    }
+
+    // envolventes (nivel, duck y duck SFX) desde `desde` hasta el final
     programarCurvas(
       busMusica.gain,
       this.cfg.nivelDb,
@@ -258,6 +328,16 @@ export class MotorMezcla {
       desde,
       this.cfg.duracionSec
     );
+    if (this.cfg.duckSfxDb && this.cfg.duckSfxDb.length > 0) {
+      programarCurvas(
+        gainDuckSfx.gain,
+        this.cfg.duckSfxDb,
+        this.cfg.hopSec,
+        t0,
+        desde,
+        this.cfg.duracionSec
+      );
+    }
 
     return t0;
   }
@@ -319,6 +399,7 @@ export class MotorMezcla {
     return {
       vozDb: leer(this.analizadorVoz),
       musicaDb: leer(this.analizadorMusica),
+      sfxDb: leer(this.analizadorSfx),
     };
   }
 
@@ -332,19 +413,22 @@ export class MotorMezcla {
   }
 }
 
-/** Decodifica la narración y las pistas usadas en el contexto del motor. */
+/** Decodifica la narración, las pistas y los archivos SFX usados. */
 export async function decodificarFuentes(
   urlVoz: string,
-  urlsPistas: Map<string, string>
+  urlsPistas: Map<string, string>,
+  urlsSfx?: Map<string, string>
 ): Promise<{
   bufferVoz: AudioBuffer;
   buffersPistas: Map<string, AudioBuffer>;
+  buffersSfx: Map<string, AudioBuffer>;
 }> {
   const Ctor =
     window.AudioContext ??
     (window as unknown as { webkitAudioContext: typeof AudioContext })
       .webkitAudioContext;
   const ctx = new Ctor();
+  const sfx = urlsSfx ?? new Map<string, string>();
   try {
     const [respVoz, ...respPistas] = await Promise.all([
       fetch(urlVoz).then((r) => {
@@ -353,7 +437,12 @@ export async function decodificarFuentes(
       }),
       ...[...urlsPistas.values()].map((u) =>
         fetch(u)
-          .then((r) => r.arrayBuffer())
+          .then((r) => (r.ok ? r.arrayBuffer() : null))
+          .catch(() => null)
+      ),
+      ...[...sfx.values()].map((u) =>
+        fetch(u)
+          .then((r) => (r.ok ? r.arrayBuffer() : null))
           .catch(() => null)
       ),
     ]);
@@ -369,8 +458,18 @@ export async function decodificarFuentes(
         /* pista ilegible: se salta */
       }
     }
+    const buffersSfx = new Map<string, AudioBuffer>();
+    for (const id of sfx.keys()) {
+      const ab = respPistas[i++];
+      if (!ab) continue;
+      try {
+        buffersSfx.set(id, await ctx.decodeAudioData(ab));
+      } catch {
+        /* SFX ilegible: se salta */
+      }
+    }
     // los buffers sobreviven al cierre del contexto de decodificación
-    return { bufferVoz, buffersPistas };
+    return { bufferVoz, buffersPistas, buffersSfx };
   } finally {
     void ctx.close().catch(() => undefined);
   }

@@ -85,6 +85,36 @@ export interface SfxResumen {
   palabraTop: string;
 }
 
+/**
+ * Clip de SFX sobre la línea de tiempo (Fase 5): espeja a BloqueMusica con
+ * el mismo contrato de edición estilo Camtasia (mover, cuchilla, recorte de
+ * bordes con offsetOrigen, silenciar) más volumen por clip.
+ */
+export interface SfxClip {
+  /** id único (coincide con el del evento origen cuando procede de la detección) */
+  id: string;
+  /** evento de la Fase 2.5 del que nació («» para clips sueltos añadidos en el editor) */
+  eventoId: string;
+  /** palabra clave detectada (auditoría; «(manual)» para los añadidos a mano) */
+  palabra: string;
+  categoria: string;
+  sfxId: string;
+  /** inicio en la línea de tiempo (s) */
+  inicio: number;
+  /** fin en la línea de tiempo (s) */
+  fin: number;
+  /** fundido de entrada (crossfade, s) */
+  fadeInSeg: number;
+  /** fundido de salida (crossfade, s) */
+  fadeOutSeg: number;
+  muted: boolean;
+  /** punto de entrada dentro del archivo SFX (recorte de borde izquierdo) */
+  offsetOrigen: number;
+  /** volumen del clip (dB) */
+  volumenDb: number;
+  origen: "auto" | "manual" | "edicion";
+}
+
 /** Paleta estable por categoría (sin azules; hash del nombre). */
 const COLORES_CATEGORIA = [
   "#fbbf24",

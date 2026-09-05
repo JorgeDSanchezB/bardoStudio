@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { Slider } from "@/components/ui/slider";
 import {
   Select,
   SelectContent,
@@ -22,6 +23,7 @@ import {
   AlertTriangle,
   RotateCcw,
   Disc3,
+  Sparkles,
 } from "lucide-react";
 import { useProjectStore } from "@/store/project";
 import { calcularMezcla } from "@/lib/fase4/mezcla";
@@ -41,6 +43,20 @@ import {
   buclesDe,
   type LadoRecorte,
 } from "@/lib/fase5/ediciones";
+import {
+  cambiarSfxClip,
+  crearClipSuelto,
+  dividirClip,
+  eliminarClip,
+  ajustarVolumenClip,
+  moverClip,
+  recortarClip,
+  silenciarClip,
+  buclesDeClip,
+} from "@/lib/sfx/clips";
+import type { SfxClip, SfxDef } from "@/lib/sfx/tipos";
+import { SFX_DEFECTOS } from "@/lib/sfx/tipos";
+import { materializarClips } from "@/lib/sfx/clips";
 import { registrarControlMotor } from "@/lib/fase5/registro-motor";
 import { formatTimecode } from "@/lib/format";
 import { GateFase } from "./gate-fase";
@@ -59,6 +75,7 @@ export function Fase5Seccion(props: Fase5SeccionProps) {
   const fase3 = useProjectStore((s) => s.fase3);
   const fase5 = useProjectStore((s) => s.fase5);
   const fase2 = useProjectStore((s) => s.fase2);
+  const faseSfx = useProjectStore((s) => s.faseSfx);
   const analysis = useProjectStore((s) => s.analysis);
   const silences = useProjectStore((s) => s.silences);
   const thresholds = useProjectStore((s) => s.thresholds);
@@ -67,6 +84,7 @@ export function Fase5Seccion(props: Fase5SeccionProps) {
   const buffersRef = useRef<{
     bufferVoz: AudioBuffer;
     buffersPistas: Map<string, AudioBuffer>;
+    buffersSfx: Map<string, AudioBuffer>;
     /** URL con la que se decodificaron (para invalidar al cambiar de fuente) */
     urlVoz: string;
   } | null>(null);
@@ -78,11 +96,13 @@ export function Fase5Seccion(props: Fase5SeccionProps) {
 
   const duracion = analysis?.durationSec ?? 0;
   const bloques = fase5.bloques;
+  const clipsSfx = faseSfx.clips ?? [];
   const paramsEdicion = fase5.params ?? fase4.params;
   const envListo = !!analysis && analysis.envDb.length > 0;
   const listo = bloques !== null && envListo;
+  const defectosSfx = faseSfx.config?.defectos;
 
-  // ---------- materializar bloques desde la mezcla APROBADA ----------
+  // ---------- materializar bloques + clips SFX desde la mezcla APROBADA ----------
   // (solo al aprobar la Fase 4: si se materializara antes, los ajustes
   // manuales de pistas hechos en la Fase 3 quedarían fuera del editor)
   const mezclaStore = useProjectStore((s) => s.fase4.mezcla);
@@ -94,6 +114,23 @@ export function Fase5Seccion(props: Fase5SeccionProps) {
       .getState()
       .materializarFase5(mezclaStore.bloques, fase4.params);
   }, [bloques, envListo, mezclaStore, fase4.params, fase4.status]);
+
+  // los clips de efectos se materializan junto a los bloques (mismo hito)
+  useEffect(() => {
+    if (faseSfx.clips !== null) return;
+    if (fase4.status !== "approved") return;
+    if (!bloques) return;
+    const st = useProjectStore.getState();
+    const defectos =
+      st.faseSfx.config?.defectos ?? SFX_DEFECTOS;
+    const clips = materializarClips(
+      st.faseSfx.eventos,
+      defectos,
+      duracion,
+      st.faseSfx.biblioteca ?? []
+    );
+    st.materializarClipsSfx(clips);
+  }, [faseSfx.clips, fase4.status, bloques, duracion]);
 
   // ---------- envolventes vigentes (recalculadas tras cada edición) ----------
   const mezclaActual = useMemo(() => {
@@ -109,6 +146,7 @@ export function Fase5Seccion(props: Fase5SeccionProps) {
         silencios: silences,
         params: paramsEdicion,
         bloquesOverride: bloques,
+        sfxRespetarDucking: defectosSfx?.respetarDucking ?? false,
       });
     } catch {
       return null;
@@ -121,6 +159,7 @@ export function Fase5Seccion(props: Fase5SeccionProps) {
     silences,
     thresholds.dbThreshold,
     paramsEdicion,
+    defectosSfx?.respetarDucking,
   ]);
 
   // ---------- construir/actualizar el motor ----------
@@ -128,11 +167,12 @@ export function Fase5Seccion(props: Fase5SeccionProps) {
     if (!bloques || !mezclaActual || !sourceUrl) return;
     if (motorRef.current) {
       const bufs = buffersRef.current;
-      // ¿los buffers actuales cubren todos los bloques vivos y la fuente?
+      // ¿los buffers actuales cubren todos los bloques/clips vivos y la fuente?
       const cubreTodo =
         !!bufs &&
         bufs.urlVoz === sourceUrl &&
-        bloques.every((b) => b.muted || bufs.buffersPistas.get(b.pistaId));
+        bloques.every((b) => b.muted || bufs.buffersPistas.get(b.pistaId)) &&
+        clipsSfx.every((c) => c.muted || bufs.buffersSfx.get(c.sfxId));
       if (cubreTodo) {
         motorRef.current.reconfigurar({
           bufferVoz: bufs!.bufferVoz,
@@ -144,11 +184,15 @@ export function Fase5Seccion(props: Fase5SeccionProps) {
           duracionSec: mezclaActual
             ? analysis?.durationSec ?? duracion
             : duracion,
+          clipsSfx,
+          buffersSfx: bufs!.buffersSfx,
+          duckSfxDb: mezclaActual.duckSfxDb,
         });
         return;
       }
-      // falta alguna pista (p. ej. tras cambiar de asignación o de proyecto):
-      // descartar el motor para que el próximo «reproducir» re-decodifique
+      // falta alguna pista o SFX (p. ej. tras cambiar de asignación o de
+      // proyecto): descartar el motor para que el próximo «reproducir»
+      // re-decodifique
       motorRef.current.dispose();
       motorRef.current = null;
       buffersRef.current = null;
@@ -157,7 +201,14 @@ export function Fase5Seccion(props: Fase5SeccionProps) {
       return;
     }
     // primer arranque diferido: se crea al pulsar reproducir
-  }, [bloques, mezclaActual, sourceUrl, analysis, duracion]);
+  }, [
+    bloques,
+    clipsSfx,
+    mezclaActual,
+    sourceUrl,
+    analysis,
+    duracion,
+  ]);
 
   // ---------- cambio de fuente (proyecto reabierto): invalidar el motor ----------
   const urlVistaRef = useRef<string | null>(null);
@@ -193,14 +244,26 @@ export function Fase5Seccion(props: Fase5SeccionProps) {
       const p = catalogo.find((x) => x.id === b.pistaId);
       if (p) urls.set(p.id, p.archivo);
     }
+    const bibliotecaSfx = faseSfx.biblioteca ?? [];
+    const urlsSfx = new Map<string, string>();
+    for (const c of clipsSfx) {
+      const d = bibliotecaSfx.find((x) => x.id === c.sfxId);
+      if (d && !urlsSfx.has(d.id)) urlsSfx.set(d.id, d.archivo);
+    }
     setCargandoAudio(true);
     setErrorMotor(null);
     try {
-      const { bufferVoz, buffersPistas } = await decodificarFuentes(
+      const { bufferVoz, buffersPistas, buffersSfx } = await decodificarFuentes(
         sourceUrl,
-        urls
+        urls,
+        urlsSfx
       );
-      buffersRef.current = { bufferVoz, buffersPistas, urlVoz: sourceUrl };
+      buffersRef.current = {
+        bufferVoz,
+        buffersPistas,
+        buffersSfx,
+        urlVoz: sourceUrl,
+      };
       const cfg: MotorConfig = {
         bufferVoz,
         buffersPistas,
@@ -209,6 +272,9 @@ export function Fase5Seccion(props: Fase5SeccionProps) {
         duckDb: mezclaActual.duckDb,
         hopSec: mezclaActual.hopSec,
         duracionSec: duracion,
+        clipsSfx,
+        buffersSfx,
+        duckSfxDb: mezclaActual.duckSfxDb,
       };
       motorRef.current = new MotorMezcla(cfg);
       return true;
@@ -222,7 +288,15 @@ export function Fase5Seccion(props: Fase5SeccionProps) {
     } finally {
       setCargandoAudio(false);
     }
-  }, [sourceUrl, bloques, mezclaActual, fase3.catalogo, duracion]);
+  }, [
+    sourceUrl,
+    bloques,
+    clipsSfx,
+    mezclaActual,
+    fase3.catalogo,
+    faseSfx.biblioteca,
+    duracion,
+  ]);
 
   // ---------- playhead fluido ----------
   useEffect(() => {
@@ -315,8 +389,12 @@ export function Fase5Seccion(props: Fase5SeccionProps) {
       s.add(b.inicio);
       s.add(b.fin);
     }
+    for (const c of clipsSfx) {
+      s.add(c.inicio);
+      s.add(c.fin);
+    }
     return [...s].sort((a, b) => a - b);
-  }, [bloques, duracion]);
+  }, [bloques, clipsSfx, duracion]);
 
   const salto = useCallback(
     (dir: -1 | 1) => {
@@ -339,6 +417,14 @@ export function Fase5Seccion(props: Fase5SeccionProps) {
     []
   );
 
+  const aplicarSfx = useCallback(
+    (nuevos: SfxClip[] | null, detalle: string) => {
+      if (!nuevos) return;
+      useProjectStore.getState().aplicarEdicionClipsSfx(nuevos, detalle);
+    },
+    []
+  );
+
   const seleccionado = useMemo(
     () => bloques?.find((b) => b.id === selId) ?? null,
     [bloques, selId]
@@ -347,10 +433,19 @@ export function Fase5Seccion(props: Fase5SeccionProps) {
     () => fase3.catalogo?.find((p) => p.id === seleccionado?.pistaId) ?? null,
     [fase3.catalogo, seleccionado]
   );
+  const clipSel = useMemo(
+    () => clipsSfx.find((c) => c.id === selId) ?? null,
+    [clipsSfx, selId]
+  );
+  const defSel = useMemo(
+    () =>
+      (faseSfx.biblioteca ?? []).find((d) => d.id === clipSel?.sfxId) ?? null,
+    [faseSfx.biblioteca, clipSel]
+  );
 
   const medirMotor = useCallback(() => {
     const m = motorRef.current;
-    return m ? m.medir() : { vozDb: -90, musicaDb: -90 };
+    return m ? m.medir() : { vozDb: -90, musicaDb: -90, sfxDb: -90 };
   }, []);
 
   if (fase4.status !== "approved" || !bloques) {
@@ -374,12 +469,14 @@ export function Fase5Seccion(props: Fase5SeccionProps) {
         </h2>
         <p className="max-w-3xl text-sm leading-relaxed text-zinc-400">
           Escucha la <strong className="text-zinc-200">mezcla completa</strong>{" "}
-          (voz + música con ducking y crossfades) y afínala como en Camtasia:{" "}
-          <strong className="text-zinc-200">corta</strong> bloques con la
-          cuchilla, <strong className="text-zinc-200">arrastra</strong> para
+          (voz + música con ducking y crossfades +{" "}
+          <strong className="text-zinc-200">efectos</strong> en su propia
+          pista) y afínala como en Camtasia:{" "}
+          <strong className="text-zinc-200">corta</strong> bloques y clips con
+          la cuchilla, <strong className="text-zinc-200">arrastra</strong> para
           moverlos, <strong className="text-zinc-200">tira de sus bordes</strong>{" "}
-          para recortarlos o alargarlos (la pista continúa en bucle si hace
-          falta), silencia o cambia la pista. Cada edición se recalcula al
+          para recortarlos o alargarlos (el audio continúa en bucle si hace
+          falta), silencia o cambia el archivo. Cada edición se recalcula al
           instante.
         </p>
       </div>
@@ -422,10 +519,10 @@ export function Fase5Seccion(props: Fase5SeccionProps) {
           {cargandoAudio && (
             <p className="flex items-center gap-2 text-[11px] text-amber-300/90">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              Decodificando la narración y las pistas en memoria…
+              Decodificando la narración, las pistas y los efectos en memoria…
             </p>
           )}
-          <NivelMetros leer={medirMotor} activo={reproduciendo} />
+          <NivelMetros leer={medirMotor} activo={reproduciendo} conSfx />
         </CardContent>
       </Card>
 
@@ -478,12 +575,41 @@ export function Fase5Seccion(props: Fase5SeccionProps) {
                     } ${formatTimecode(valor)}`
               );
             }}
+            clipsSfx={clipsSfx}
+            bibliotecaSfx={faseSfx.biblioteca ?? []}
+            onMoverSfx={(id, nuevoInicio) => {
+              const nuevos = moverClip(clipsSfx, id, nuevoInicio, duracion);
+              if (nuevos)
+                aplicarSfx(
+                  nuevos,
+                  `Efecto movido a ${formatTimecode(nuevoInicio)}`
+                );
+            }}
+            onRecortarSfx={(id, lado: LadoRecorte, valor) => {
+              const original = clipsSfx.find((c) => c.id === id);
+              const nuevos = recortarClip(clipsSfx, id, lado, valor, duracion);
+              if (!nuevos || !original) return;
+              const alargo =
+                lado === "inicio"
+                  ? valor < original.inicio
+                  : valor > original.fin;
+              aplicarSfx(
+                nuevos,
+                lado === "inicio"
+                  ? `${
+                      alargo ? "Efecto adelantado a" : "Efecto recortado a"
+                    } ${formatTimecode(valor)}`
+                  : `${
+                      alargo ? "Efecto alargado hasta" : "Efecto acortado a"
+                    } ${formatTimecode(valor)}`
+              );
+            }}
             onSeek={(t) => void buscarA(t)}
           />
         </CardContent>
       </Card>
 
-      {/* inspector del bloque seleccionado */}
+      {/* inspector del bloque de música seleccionado */}
       {seleccionado && !aprobada && (
         <Card className="border-zinc-800 bg-zinc-950/60">
           <CardHeader className="pb-2">
@@ -632,25 +758,291 @@ export function Fase5Seccion(props: Fase5SeccionProps) {
         </Card>
       )}
 
+      {/* inspector del clip de efectos seleccionado */}
+      {clipSel && !seleccionado && !aprobada && (
+        <Card className="border-zinc-800 bg-zinc-950/60">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex flex-wrap items-center gap-2 text-xs text-zinc-400">
+              <Sparkles className="h-3.5 w-3.5 text-amber-400" />
+              Efecto seleccionado
+              {clipSel.origen === "edicion" && (
+                <Badge variant="outline" className="text-[9px] text-amber-300">
+                  editado
+                </Badge>
+              )}
+              {clipSel.origen === "manual" && (
+                <Badge variant="outline" className="text-[9px] text-zinc-400">
+                  añadido a mano
+                </Badge>
+              )}
+              <span className="ms-auto font-mono text-[10px] text-zinc-500">
+                {formatTimecode(clipSel.inicio)} →{" "}
+                {formatTimecode(clipSel.fin)} ·{" "}
+                {(clipSel.fin - clipSel.inicio).toFixed(1)} s
+              </span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 pb-4">
+            <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-zinc-500">
+              {clipSel.palabra !== "(manual)" && (
+                <span>
+                  detectado por <em>«{clipSel.palabra}»</em> · categoría{" "}
+                  {clipSel.categoria}
+                </span>
+              )}
+              {clipSel.offsetOrigen > 0.05 && (
+                <span className="font-mono">
+                  el archivo arranca en su segundo{" "}
+                  {formatTimecode(clipSel.offsetOrigen).slice(3, 11)}
+                </span>
+              )}
+              {defSel && buclesDeClip(clipSel, defSel.durSec) > 1 && (
+                <span>
+                  suena {buclesDeClip(clipSel, defSel.durSec)} bucles del
+                  archivo
+                </span>
+              )}
+              <span className="text-zinc-600">
+                tira de los bordes en la línea de tiempo para recortar/alargar
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Select
+                value={clipSel.sfxId}
+                onValueChange={(v) => {
+                  const nuevos = cambiarSfxClip(clipsSfx, clipSel.id, v);
+                  if (nuevos) {
+                    const d = (faseSfx.biblioteca ?? []).find(
+                      (x) => x.id === v
+                    );
+                    aplicarSfx(
+                      nuevos,
+                      `Efecto cambiado a «${d?.nombre ?? v}»`
+                    );
+                  }
+                }}
+              >
+                <SelectTrigger
+                  className="h-9 w-[240px] text-xs"
+                  aria-label="Cambiar el archivo del efecto"
+                >
+                  <SelectValue placeholder="Efecto" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(faseSfx.biblioteca ?? []).map((d) => (
+                    <SelectItem key={d.id} value={d.id} className="text-xs">
+                      {d.nombre}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-9 gap-1.5"
+                disabled={
+                  posicion <= clipSel.inicio + 0.3 ||
+                  posicion >= clipSel.fin - 0.3
+                }
+                onClick={() => {
+                  const nuevos = dividirClip(clipsSfx, clipSel.id, posicion);
+                  if (nuevos)
+                    aplicarSfx(
+                      nuevos,
+                      `Efecto cortado en ${formatTimecode(posicion)}`
+                    );
+                  else
+                    setErrorMotor(
+                      "El corte debe caer dentro del clip (mínimo 0.3 s por lado)."
+                    );
+                }}
+              >
+                <Scissors className="h-3.5 w-3.5" />
+                Cortar en {formatTimecode(posicion).slice(3, 11)}
+              </Button>
+
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="mute-clip-sfx"
+                  checked={clipSel.muted}
+                  onCheckedChange={() => {
+                    const nuevos = silenciarClip(clipsSfx, clipSel.id);
+                    if (nuevos)
+                      aplicarSfx(
+                        nuevos,
+                        clipSel.muted
+                          ? "Efecto reactivado"
+                          : "Efecto silenciado"
+                      );
+                  }}
+                  aria-label="Silenciar el efecto"
+                />
+                <label
+                  htmlFor="mute-clip-sfx"
+                  className="flex items-center gap-1 text-[11px] text-zinc-400"
+                >
+                  {clipSel.muted ? (
+                    <>
+                      <VolumeX className="h-3.5 w-3.5" /> silenciado
+                    </>
+                  ) : (
+                    <>
+                      <Volume2 className="h-3.5 w-3.5" /> con sonido
+                    </>
+                  )}
+                </label>
+              </div>
+
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-9 gap-1.5 border-rose-800/60 text-rose-300 hover:bg-rose-950/30"
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      `¿Eliminar el efecto «${
+                        defSel?.nombre ?? clipSel.sfxId
+                      }» (${formatTimecode(clipSel.inicio)})?`
+                    )
+                  ) {
+                    const nuevos = eliminarClip(clipsSfx, clipSel.id);
+                    if (nuevos) {
+                      aplicarSfx(nuevos, "Efecto eliminado");
+                      setSelId(null);
+                    }
+                  }
+                }}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Eliminar
+              </Button>
+            </div>
+
+            {/* volumen del clip */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label
+                  htmlFor="vol-clip-sfx"
+                  className="text-[11px] font-medium text-zinc-300"
+                >
+                  Volumen del efecto
+                </label>
+                <span className="rounded bg-zinc-800/80 px-1.5 py-0.5 font-mono text-[10px] text-amber-200">
+                  {clipSel.volumenDb > 0 ? "+" : ""}
+                  {clipSel.volumenDb.toFixed(1)} dB
+                </span>
+              </div>
+              <Slider
+                id="vol-clip-sfx"
+                min={-40}
+                max={0}
+                step={0.5}
+                value={[clipSel.volumenDb]}
+                onValueChange={(v) => {
+                  const nuevos = ajustarVolumenClip(
+                    clipsSfx,
+                    clipSel.id,
+                    v[0]
+                  );
+                  if (nuevos)
+                    aplicarSfx(
+                      nuevos,
+                      `Volumen del efecto: ${v[0] > 0 ? "+" : ""}${v[0]} dB`
+                    );
+                }}
+                aria-label="Volumen del efecto en dB"
+              />
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* añadir efecto desde la biblioteca en el cursor */}
+      {!aprobada && (faseSfx.biblioteca ?? []).length > 0 && (
+        <Card className="border-zinc-800 bg-zinc-950/60">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex flex-wrap items-center gap-2 text-xs text-zinc-400">
+              <Sparkles className="h-3.5 w-3.5 text-amber-400" />
+              Añadir un efecto en el cursor
+              <span className="font-mono text-[10px] text-zinc-500">
+                {formatTimecode(posicion).slice(3, 11)}
+              </span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pb-4">
+            <Select
+              value=""
+              onValueChange={(v) => {
+                const def = (faseSfx.biblioteca ?? []).find((d) => d.id === v);
+                if (!def) return;
+                const clip = crearClipSuelto(
+                  def,
+                  posicion,
+                  defectosSfx?.nivelDb ?? -12,
+                  duracion,
+                  defectosSfx?.crossfadeSeg ?? 0.5
+                );
+                aplicarSfx(
+                  [...clipsSfx, clip],
+                  `Efecto «${def.nombre}» añadido en ${formatTimecode(
+                    clip.inicio
+                  )}`
+                );
+                setSelId(clip.id);
+              }}
+            >
+              <SelectTrigger
+                className="h-9 w-[280px] text-xs"
+                aria-label="Elegir un efecto de la biblioteca para añadir en el cursor"
+              >
+                <SelectValue placeholder="Biblioteca de efectos…" />
+              </SelectTrigger>
+              <SelectContent>
+                {(faseSfx.biblioteca ?? []).map((d) => (
+                  <SelectItem key={d.id} value={d.id} className="text-xs">
+                    {d.nombre}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="mt-2 text-[10px] text-zinc-600">
+              El clip nace con la duración del archivo ({defectosSfx?.crossfadeSeg ?? 0.5} s
+              de fundido) y luego se edita como cualquier otro: bordes,
+              cuchilla, volumen.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       {/* puerta de auditoría */}
       <GateFase
         fase={5}
         titulo="Editor de mezcla"
         desbloqueaTexto="bloquea la Fase 6"
-        descripcionPendiente="¿La mezcla suena como debe? Escúchala completa (o por tramos con los saltos de bloque) y aprueba para exportar los archivos finales."
+        descripcionPendiente="¿La mezcla suena como debe? Escúchala completa (voz, música y efectos con sus medidores) y aprueba para exportar los archivos finales."
         descripcionAprobada="La edición queda congelada: la Fase 6 renderizará exactamente esta mezcla."
         resumen={[
           { etiqueta: "Bloques", valor: String(bloques.length) },
           {
+            etiqueta: "Efectos",
+            valor: `${clipsSfx.filter((c) => !c.muted).length}/${clipsSfx.length}`,
+          },
+          {
             etiqueta: "Ediciones",
-            valor: String(fase5.ediciones),
+            valor: String(fase5.ediciones + faseSfx.edicionesSfx),
           },
           {
             etiqueta: "Silenciados",
-            valor: String(bloques.filter((b) => b.muted).length),
+            valor: String(
+              bloques.filter((b) => b.muted).length +
+                clipsSfx.filter((c) => c.muted).length
+            ),
           },
         ]}
-        confirmacion={`He escuchado la mezcla (${bloques.length} bloques, ${fase5.ediciones} ediciones) y el equilibrio voz/música es correcto.`}
+        confirmacion={`He escuchado la mezcla (${bloques.length} bloques, ${clipsSfx.length} efectos, ${
+          fase5.ediciones + faseSfx.edicionesSfx
+        } ediciones) y el equilibrio voz/música/efectos es correcto.`}
         textoAprobar="Aprobar la mezcla final y desbloquear la exportación"
         approved={aprobada}
         onApprove={() => {
@@ -672,11 +1064,20 @@ export function Fase5Seccion(props: Fase5SeccionProps) {
               motorRef.current.detener();
               setReproduciendo(false);
             }
-            const mezcla = useProjectStore.getState().fase4.mezcla;
+            const st = useProjectStore.getState();
+            const mezcla = st.fase4.mezcla;
             if (mezcla)
-              useProjectStore
-                .getState()
-                .materializarFase5(mezcla.bloques, fase4.params);
+              st.materializarFase5(mezcla.bloques, fase4.params);
+            // los clips vuelven a la detección aprobada de la Fase 2.5
+            const defectos = st.faseSfx.config?.defectos ?? SFX_DEFECTOS;
+            st.materializarClipsSfx(
+              materializarClips(
+                st.faseSfx.eventos,
+                defectos,
+                duracion,
+                st.faseSfx.biblioteca ?? []
+              )
+            );
             setSelId(null);
           }
         }}

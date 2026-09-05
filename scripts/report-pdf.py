@@ -78,6 +78,7 @@ ANIMO_ETIQUETAS = {
 FASES = {
     1: 'Ingestión y análisis',
     2: 'Transcripción y tensión',
+    2.5: 'Efectos de sonido',
     3: 'Gestión de música',
     4: 'Mezcla automática',
     5: 'Editor de mezcla',
@@ -395,16 +396,16 @@ def seccion_auditoria(data, st):
         if not isinstance(e, dict):
             continue
         f = num(e.get('fase'))
-        if f is None or not float(f).is_integer():
+        if f is None:
             continue
-        f = int(f)
-        if 1 <= f <= 6:
+        # claves de fase admitidas: 1, 2, 2.5, 3, 4, 5, 6
+        if f in FASES:
             estados[f] = e
 
     filas = [[Paragraph('Fase', st['thc']),
               Paragraph('Título', st['th']),
               Paragraph('Estado', st['th'])]]
-    for i in range(1, 7):
+    for i in FASES:
         e = as_dict(estados.get(i))
         titulo = text(e.get('titulo')) or FASES[i]
         dt = parse_dt(e.get('aprobadaEn'))
@@ -432,6 +433,104 @@ def seccion_auditoria(data, st):
     t = Table(filas, colWidths=[42, 235, ANCHO - 277], repeatRows=1)
     t.setStyle(TableStyle(estilo_tabla()))
     return [t]
+
+
+# --------------------------------------------------------------------------
+# 2.5 · Efectos de sonido (SFX): resumen + tabla de clips de la mezcla
+# --------------------------------------------------------------------------
+def seccion_sfx(data, st):
+    sx = as_dict(data.get('sfx'))
+    if not sx:
+        return None
+
+    detectados = num(sx.get('detectados'))
+    activos = num(sx.get('activos'))
+    if (detectados is None or detectados <= 0) and not as_list(sx.get('clips')):
+        return None
+
+    frases = []
+    if detectados is not None:
+        frases.append('%s efectos detectados' % fmt_int(detectados))
+        if activos is not None:
+            frases.append('%s activos tras la auditoría' % fmt_int(activos))
+    categorias = num(sx.get('categorias'))
+    if categorias is not None:
+        frases.append('%s categorías' % fmt_int(categorias))
+    top = text(sx.get('palabraTop'))
+    if top and top != '—':
+        frases.append('palabra más frecuente «%s»' % escape(top))
+    flujo = [Paragraph(
+        'Detección por palabras clave sobre la transcripción: %s.' %
+        ', '.join(frases), st['cuerpo'])]
+
+    detalle = []
+    nivel = num(sx.get('nivelDb'))
+    if nivel is not None:
+        detalle.append('nivel %s dB' % fmt_es(nivel))
+    crossfade = num(sx.get('crossfadeSeg'))
+    if crossfade is not None:
+        detalle.append('fundidos de %s s' % fmt_es(crossfade))
+    respeta = sx.get('respetarDucking')
+    if respeta is not None:
+        detalle.append('respeta el ducking de la voz (½ profundidad)' if respeta
+                       else 'sin ducking')
+    en_mezcla = num(sx.get('clipsEnMezcla'))
+    if en_mezcla is not None:
+        detalle.append('%s clips en la mezcla final' % fmt_int(en_mezcla))
+    sil = num(sx.get('clipsSilenciados'))
+    if sil is not None and sil > 0:
+        detalle.append('%s silenciados' % fmt_int(sil))
+    edi = num(sx.get('ediciones'))
+    if edi is not None and edi > 0:
+        detalle.append('%s ediciones manuales' % fmt_int(edi))
+    if detalle:
+        flujo.append(Paragraph('Integración en la mezcla: %s.' %
+                               ', '.join(detalle), st['cuerpo']))
+
+    # tabla de clips (el contrato envía como máximo 40; el resto se resume)
+    filas = [[Paragraph('Seg.', st['thc']),
+              Paragraph('Palabra', st['th']),
+              Paragraph('Categoría', st['th']),
+              Paragraph('Archivo', st['th']),
+              Paragraph('Vol.', st['thc'])]]
+    n_mostrados = 0
+    for c in as_list(sx.get('clips')):
+        if not isinstance(c, dict):
+            continue
+        inicio = num(c.get('inicio'))
+        if inicio is None:
+            continue
+        vol = num(c.get('volumenDb'))
+        palabra = text(c.get('palabra'))
+        if not palabra:
+            palabra = '(manual)' if text(c.get('origen')) == 'manual' else '—'
+        filas.append([
+            Paragraph(escape(mmss(inicio)), st['tdc']),
+            Paragraph(escape(palabra), st['td']),
+            Paragraph(escape(text(c.get('categoria')) or '—'), st['td']),
+            Paragraph(escape(text(c.get('sfx')) or '—'), st['td']),
+            Paragraph(escape('%s dB' % fmt_es(vol)) if vol is not None else '—',
+                      st['tdc']),
+        ])
+        n_mostrados += 1
+
+    if n_mostrados == 0:
+        return flujo
+
+    total = en_mezcla if en_mezcla is not None else n_mostrados
+    if total > n_mostrados:
+        filas.append([Paragraph('…', st['tdc']),
+                      Paragraph('… y %d clips más' % (total - n_mostrados),
+                                st['td']),
+                      Paragraph('', st['td']),
+                      Paragraph('', st['td']),
+                      Paragraph('', st['tdc'])])
+
+    t = Table(filas, colWidths=[46, 96, 96, 130, ANCHO - 368], repeatRows=1)
+    t.setStyle(TableStyle(estilo_tabla()))
+    flujo.append(Spacer(1, 6))
+    flujo.append(t)
+    return flujo
 
 
 # --------------------------------------------------------------------------
@@ -872,7 +971,7 @@ def al_empezar_portada(cv, doc):
     cv.setFillColor(white)
     cv.setFont('Helvetica', 7)
     cv.drawRightString(PAGE_W - MARGEN, PAGE_H - BANDA_H + 31.5,
-                       'PIPELINE LOCAL · 6 FASES')
+                       'PIPELINE LOCAL · 7 FASES')
     to = cv.beginText(MARGEN, PAGE_H - BANDA_H + 28)
     to.setFont('Helvetica-Bold', 16)
     to.setCharSpace(2.2)
@@ -898,6 +997,9 @@ def construir_historia(data, st):
     secciones.append(('Auditoría de fases', seccion_auditoria(data, st)))
     secciones.append(('Curva de tensión', seccion_curva(data, st)))
     secciones.append(('Escenas y tensión', seccion_escenas(data, st)))
+    s = seccion_sfx(data, st)
+    if s:
+        secciones.append(('Efectos de sonido', s))
     s = seccion_musica(data, st)
     if s:
         secciones.append(('Asignación musical', s))

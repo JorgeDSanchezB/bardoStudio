@@ -101,6 +101,11 @@ export interface Mezcla {
   nivelDb: Float32Array;
   /** ducking a aplicar (≤ 0 dB) por muestra de 100 ms */
   duckDb: Float32Array;
+  /**
+   * Ducking del bus de SFX (≤ 0 dB): 0 si la config dice que no respeta la
+   * voz, o «baja ligeramente» = media profundidad del ducking musical.
+   */
+  duckSfxDb: Float32Array;
   hopSec: number;
   stats: MezclaStats;
 }

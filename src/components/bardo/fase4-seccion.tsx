@@ -20,6 +20,8 @@ import {
   FASE4_UNIDADES,
   type Fase4Params,
 } from "@/lib/fase4/tipos";
+import { materializarClips } from "@/lib/sfx/clips";
+import { SFX_DEFECTOS } from "@/lib/sfx/tipos";
 import { formatDurSmart } from "@/lib/format";
 import { GateFase } from "./gate-fase";
 import { MixTimeline } from "./mix-timeline";
@@ -57,12 +59,25 @@ export function Fase4Seccion() {
   const fase2 = useProjectStore((s) => s.fase2);
   const fase3 = useProjectStore((s) => s.fase3);
   const fase4 = useProjectStore((s) => s.fase4);
+  const faseSfx = useProjectStore((s) => s.faseSfx);
   const analysis = useProjectStore((s) => s.analysis);
   const silences = useProjectStore((s) => s.silences);
   const thresholds = useProjectStore((s) => s.thresholds);
 
   const aprobada = fase4.status === "approved";
   const params = fase4.params;
+  const defectosSfx = faseSfx.config?.defectos ?? SFX_DEFECTOS;
+
+  // clips SFX de previsualización (se materializan de verdad en la Fase 5)
+  const clipsSfxVista = useMemo(() => {
+    if (!analysis || faseSfx.eventos.length === 0) return [];
+    return materializarClips(
+      faseSfx.eventos,
+      defectosSfx,
+      analysis.durationSec,
+      faseSfx.biblioteca ?? []
+    );
+  }, [analysis, faseSfx.eventos, faseSfx.biblioteca, defectosSfx]);
 
   // ---- cálculo determinista de la mezcla (se recalcula al mover sliders) ----
   const mezcla = useMemo(() => {
@@ -78,11 +93,20 @@ export function Fase4Seccion() {
         umbralVozDb: thresholds.dbThreshold,
         silencios: silences,
         params,
+        sfxRespetarDucking: defectosSfx.respetarDucking,
       });
     } catch {
       return null;
     }
-  }, [analysis, fase3.asignaciones, fase2.escenas, silences, thresholds.dbThreshold, params]);
+  }, [
+    analysis,
+    fase3.asignaciones,
+    fase2.escenas,
+    silences,
+    thresholds.dbThreshold,
+    params,
+    defectosSfx.respetarDucking,
+  ]);
 
   // volcar al store (volátil) para que el editor de la Fase 5 la materialice
   useEffect(() => {
@@ -201,6 +225,8 @@ export function Fase4Seccion() {
                   duckDb={mezcla.duckDb}
                   silences={silences}
                   playheadSec={0}
+                  clipsSfx={clipsSfxVista}
+                  bibliotecaSfx={faseSfx.biblioteca ?? []}
                   onSeek={() => undefined}
                 />
               </CardContent>
@@ -229,21 +255,35 @@ export function Fase4Seccion() {
               Hinchados en silencios:{" "}
               <span className="text-zinc-300">{stats?.hinchados}</span>
             </span>
+            <span>
+              Efectos: <span className="text-zinc-300">{clipsSfxVista.length}</span>{" "}
+              clips · {defectosSfx.nivelDb} dB ·{" "}
+              {defectosSfx.respetarDucking
+                ? "respeta el ducking de la voz (½ profundidad)"
+                : "sin ducking"}{" "}
+              · fundidos {defectosSfx.crossfadeSeg} s
+            </span>
           </div>
 
           <GateFase
             fase={4}
             titulo="Mezcla automática"
             desbloqueaTexto="bloquea la Fase 5"
-            descripcionPendiente="¿El arreglo respeta la narración? Mueve los sliders, revisa la envolvente y los crossfades en la línea de tiempo y aprueba para editar en el estudio."
+            descripcionPendiente="¿El arreglo respeta la narración? Mueve los sliders, revisa la envolvente, los crossfades y la pista de efectos en la línea de tiempo y aprueba para editar en el estudio."
             descripcionAprobada="El arreglo queda fijado: la Fase 5 lo materializa en un editor reproducible con medidores."
             resumen={[
               { etiqueta: "Bloques", valor: String(stats?.bloques ?? 0) },
               { etiqueta: "Crossfades", valor: String(stats?.crossfades ?? 0) },
               { etiqueta: "Ducking", valor: `−${params.profundidadDuckingDb} dB` },
               { etiqueta: "Crossfade", valor: `${params.crossfadeSeg} s` },
+              {
+                etiqueta: "Efectos",
+                valor: clipsSfxVista.length
+                  ? `${clipsSfxVista.length} · ${defectosSfx.nivelDb} dB`
+                  : "—",
+              },
             ]}
-            confirmacion={`He revisado el arreglo (${stats?.bloques ?? 0} bloques, ducking de ${params.profundidadDuckingDb} dB bajo la voz, crossfades de ${params.crossfadeSeg} s) y refleja la intención musical.`}
+            confirmacion={`He revisado el arreglo (${stats?.bloques ?? 0} bloques, ducking de ${params.profundidadDuckingDb} dB bajo la voz, crossfades de ${params.crossfadeSeg} s${clipsSfxVista.length ? `, ${clipsSfxVista.length} efectos a ${defectosSfx.nivelDb} dB` : ""}) y refleja la intención musical.`}
             textoAprobar="Aprobar el arreglo y abrir el editor (Fase 5)"
             approved={aprobada}
             onApprove={() => useProjectStore.getState().aprobarFase4()}

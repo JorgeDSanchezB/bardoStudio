@@ -31,6 +31,8 @@ export interface EntradaMezcla {
   params: Fase4Params;
   /** Fase 5: recalcular con bloques editados (cortes/movidas/borrados) */
   bloquesOverride?: BloqueMusica[];
+  /** SFX: ¿el bus de efectos respeta el ducking de la voz? (defecto: no) */
+  sfxRespetarDucking?: boolean;
 }
 
 /** Agrupa escenas contiguas con la misma pista en bloques con crossfades. */
@@ -259,6 +261,13 @@ export function calcularMezcla(ent: EntradaMezcla): Mezcla {
     n
   );
 
+  // ducking del bus de SFX: si respeta la voz, baja la MITAD de lo que baja
+  // la música («baja ligeramente», según config del módulo); si no, 0 dB.
+  const duckSfx = new Float32Array(n);
+  if (ent.sfxRespetarDucking) {
+    for (let i = 0; i < n; i++) duckSfx[i] = duck[i] * 0.5;
+  }
+
   // estadísticas
   let tiempoMusica = 0;
   for (const b of bloques) {
@@ -286,6 +295,7 @@ export function calcularMezcla(ent: EntradaMezcla): Mezcla {
     bloques,
     nivelDb: nivel,
     duckDb: duck,
+    duckSfxDb: duckSfx,
     hopSec: HOP,
     stats: {
       bloques: bloques.length,

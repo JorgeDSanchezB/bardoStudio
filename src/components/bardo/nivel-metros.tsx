@@ -5,8 +5,10 @@ import { clamp } from "@/lib/format";
 
 interface NivelMetrosProps {
   /** lectura en dB (se llama por rAF mientras el motor suena) */
-  leer: () => { vozDb: number; musicaDb: number };
+  leer: () => { vozDb: number; musicaDb: number; sfxDb?: number };
   activo: boolean;
+  /** muestra el medidor de efectos (Fase 5 con pista SFX) */
+  conSfx?: boolean;
 }
 
 const PISO = -60;
@@ -64,14 +66,16 @@ function Metro({
   );
 }
 
-/** Medidores de nivel de voz y música (Fase 5), actualizados por rAF. */
+/** Medidores de nivel de voz, música y efectos (Fase 5), por rAF. */
 export function NivelMetros(props: NivelMetrosProps) {
-  const { leer, activo } = props;
+  const { leer, activo, conSfx } = props;
   const [lecturas, setLecturas] = useState({
     voz: PISO,
     musica: PISO,
+    sfx: PISO,
     picoVoz: 0,
     picoMusica: 0,
+    picoSfx: 0,
   });
 
   useEffect(() => {
@@ -80,20 +84,25 @@ export function NivelMetros(props: NivelMetrosProps) {
     let ultimo = 0;
     let pv = 0;
     let pm = 0;
+    let ps = 0;
     const loop = (t: number) => {
       if (t - ultimo > 40) {
         ultimo = t;
-        const { vozDb, musicaDb } = leer();
+        const { vozDb, musicaDb, sfxDb } = leer();
         const nv = dbAPct(vozDb);
         const nm = dbAPct(musicaDb);
+        const ns = dbAPct(sfxDb ?? PISO);
         // pico con caída lenta (retención ~1.2 s)
         pv = Math.max(nv, pv - 1.1);
         pm = Math.max(nm, pm - 1.1);
+        ps = Math.max(ns, ps - 1.1);
         setLecturas({
           voz: vozDb,
           musica: musicaDb,
+          sfx: sfxDb ?? PISO,
           picoVoz: pv,
           picoMusica: pm,
+          picoSfx: ps,
         });
       }
       raf = requestAnimationFrame(loop);
@@ -104,8 +113,10 @@ export function NivelMetros(props: NivelMetrosProps) {
 
   const voz = activo ? lecturas.voz : PISO;
   const musica = activo ? lecturas.musica : PISO;
+  const sfx = activo ? lecturas.sfx : PISO;
   const pctVoz = dbAPct(voz);
   const pctMusica = dbAPct(musica);
+  const pctSfx = dbAPct(sfx);
 
   return (
     <div className="space-y-1.5">
@@ -121,6 +132,14 @@ export function NivelMetros(props: NivelMetrosProps) {
         picoPct={activo ? lecturas.picoMusica : 0}
         color="#2dd4bf"
       />
+      {conSfx && (
+        <Metro
+          etiqueta="EFECTOS"
+          pct={pctSfx}
+          picoPct={activo ? lecturas.picoSfx : 0}
+          color="#fb923c"
+        />
+      )}
     </div>
   );
 }

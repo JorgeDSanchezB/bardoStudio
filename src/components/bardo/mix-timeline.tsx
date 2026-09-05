@@ -7,11 +7,17 @@ import type { AnalysisData } from "@/store/project";
 import type { SilenceRegion } from "@/lib/audio/silence";
 import type { BloqueMusica } from "@/lib/fase4/tipos";
 import type { Pista } from "@/lib/fase3/tipos";
+import type { SfxClip, SfxDef } from "@/lib/sfx/tipos";
+import { colorCategoria } from "@/lib/sfx/tipos";
 import {
   buclesDe,
   limitesBorde,
   type LadoRecorte,
 } from "@/lib/fase5/ediciones";
+import {
+  buclesDeClip,
+  limitesBordeClip,
+} from "@/lib/sfx/clips";
 import { ANIMO_COLORES } from "@/lib/fase2/types";
 import {
   clamp,
@@ -36,14 +42,20 @@ interface MixTimelineProps {
   onMover?: (id: string, nuevoInicio: number) => void;
   /** Recorte/alargado por los bordes (estilo Camtasia). */
   onRecortar?: (id: string, lado: LadoRecorte, valor: number) => void;
+  /** pista de efectos (Fase 5 / previsualización Fase 4) */
+  clipsSfx?: SfxClip[];
+  bibliotecaSfx?: SfxDef[];
+  onMoverSfx?: (id: string, nuevoInicio: number) => void;
+  onRecortarSfx?: (id: string, lado: LadoRecorte, valor: number) => void;
   onSeek: (t: number) => void;
 }
 
 const RULER_H = 26;
 const NARR_H = 64;
 const MUS_H = 132;
+const SFX_H = 56;
 const MAX_PPS = 2000;
-/** ancho en px de la zona de agarre de cada borde de bloque */
+/** ancho en px de la zona de agarre de cada borde de bloque/clip */
 const EDGE_PX = 9;
 /** rango vertical del carril de música: dB → y */
 const DB_MIN = -48;
@@ -51,9 +63,13 @@ const DB_MAX = 6;
 
 type View = { start: number; pps: number };
 
-/** Arrastre de cuerpo: desplaza el bloque completo. */
+/** Colección a la que pertenece el id arrastrado. */
+type TipoArrastre = "musica" | "sfx";
+
+/** Arrastre de cuerpo: desplaza el bloque/clip completo. */
 interface ArrastreMover {
   modo: "mover";
+  tipo: TipoArrastre;
   id: string;
   inicioOriginal: number;
   deltaSec: number;
@@ -62,6 +78,7 @@ interface ArrastreMover {
 /** Arrastre de borde: recorta (hacia dentro) o alarga (hacia fuera). */
 interface ArrastreRecorte {
   modo: "recorte";
+  tipo: TipoArrastre;
   id: string;
   lado: LadoRecorte;
   valorOriginal: number;
@@ -86,8 +103,14 @@ export function MixTimeline(props: MixTimelineProps) {
     onSelect,
     onMover,
     onRecortar,
+    clipsSfx,
+    bibliotecaSfx,
+    onMoverSfx,
+    onRecortarSfx,
     onSeek,
   } = props;
+
+  const conSfx = clipsSfx !== undefined;
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -96,15 +119,23 @@ export function MixTimeline(props: MixTimelineProps) {
   const [arrastre, setArrastre] = useState<Arrastre | null>(null);
   const [hover, setHover] = useState<{ x: number; t: number } | null>(null);
 
+  const altoTotal = RULER_H + NARR_H + MUS_H + (conSfx ? SFX_H : 0);
+  const sfxTop = RULER_H + NARR_H + MUS_H;
+
   const pistaMap = useMemo(
     () => new Map(pistas.map((p) => [p.id, p])),
     [pistas]
   );
+  const sfxMap = useMemo(
+    () => new Map((bibliotecaSfx ?? []).map((b) => [b.id, b])),
+    [bibliotecaSfx]
+  );
 
-  /** Aplica el arrastre en curso a un bloque (vista previa en vivo). */
+  /** Aplica el arrastre en curso a un bloque de música (vista previa viva). */
   const conArrastre = useCallback(
     (b: BloqueMusica): BloqueMusica => {
-      if (!arrastre || arrastre.id !== b.id) return b;
+      if (!arrastre || arrastre.id !== b.id || arrastre.tipo !== "musica")
+        return b;
       if (arrastre.modo === "mover") {
         return {
           ...b,
@@ -139,6 +170,50 @@ export function MixTimeline(props: MixTimelineProps) {
         fin: v,
         fadeInSeg: Math.min(b.fadeInSeg, dur / 2),
         fadeOutSeg: Math.min(b.fadeOutSeg, dur / 2),
+      };
+    },
+    [arrastre, durationSec]
+  );
+
+  /** Aplica el arrastre en curso a un clip de SFX (vista previa viva). */
+  const conArrastreSfx = useCallback(
+    (c: SfxClip): SfxClip => {
+      if (!arrastre || arrastre.id !== c.id || arrastre.tipo !== "sfx")
+        return c;
+      if (arrastre.modo === "mover") {
+        return {
+          ...c,
+          inicio: c.inicio + arrastre.deltaSec,
+          fin: c.fin + arrastre.deltaSec,
+        };
+      }
+      const lim = limitesBordeClip(c, durationSec);
+      if (arrastre.lado === "inicio") {
+        const v = clamp(
+          Math.round(arrastre.valor * 10) / 10,
+          lim.inicioMin,
+          lim.inicioMax
+        );
+        const dur = c.fin - v;
+        return {
+          ...c,
+          inicio: v,
+          offsetOrigen: Math.max(0, c.offsetOrigen + (v - c.inicio)),
+          fadeInSeg: Math.min(c.fadeInSeg, dur / 2),
+          fadeOutSeg: Math.min(c.fadeOutSeg, dur / 2),
+        };
+      }
+      const v = clamp(
+        Math.round(arrastre.valor * 10) / 10,
+        lim.finMin,
+        lim.finMax
+      );
+      const dur = v - c.inicio;
+      return {
+        ...c,
+        fin: v,
+        fadeInSeg: Math.min(c.fadeInSeg, dur / 2),
+        fadeOutSeg: Math.min(c.fadeOutSeg, dur / 2),
       };
     },
     [arrastre, durationSec]
@@ -182,7 +257,7 @@ export function MixTimeline(props: MixTimelineProps) {
     if (!canvas) return;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     const W = ancho;
-    const H = RULER_H + NARR_H + MUS_H;
+    const H = altoTotal;
     if (canvas.width !== W * dpr || canvas.height !== H * dpr) {
       canvas.width = W * dpr;
       canvas.height = H * dpr;
@@ -360,7 +435,9 @@ export function MixTimeline(props: MixTimelineProps) {
       if (editable && onRecortar && w >= 8) {
         const gw = Math.min(6, w / 4);
         const activo =
-          arrastre?.modo === "recorte" && arrastre.id === b.id;
+          arrastre?.modo === "recorte" &&
+          arrastre.id === b.id &&
+          arrastre.tipo === "musica";
         ctx.fillStyle = activo
           ? "#fbbf24"
           : sel
@@ -468,6 +545,130 @@ export function MixTimeline(props: MixTimelineProps) {
       ctx.stroke();
     }
 
+    // ===== carril efectos (SFX) =====
+    if (conSfx) {
+      ctx.fillStyle = "#0a0a0c";
+      ctx.fillRect(0, sfxTop, W, SFX_H);
+      ctx.strokeStyle = "#27272a";
+      ctx.beginPath();
+      ctx.moveTo(0, sfxTop + 0.5);
+      ctx.lineTo(W, sfxTop + 0.5);
+      ctx.stroke();
+      ctx.fillStyle = "#52525b";
+      ctx.font = "10px ui-monospace, SFMono-Regular, Menlo, monospace";
+      ctx.fillText("EFECTOS", 6, sfxTop + 6);
+
+      const clipsVisibles = (clipsSfx ?? []).map(conArrastreSfx);
+      const yClip0 = sfxTop + 12;
+      const hClip = SFX_H - 20;
+      for (const c of clipsVisibles) {
+        if (c.fin + c.fadeOutSeg < t0 || c.inicio > t1) continue;
+        const def = sfxMap.get(c.sfxId);
+        const color = colorCategoria(c.categoria);
+        const x = xDe(c.inicio);
+        const x2 = xDe(c.fin);
+        const w = Math.max(2, x2 - x);
+        const sel = selectedId === c.id;
+        ctx.globalAlpha = c.muted ? 0.25 : 0.85;
+        ctx.fillStyle = color;
+        ctx.fillRect(x, yClip0, w, hClip);
+        ctx.globalAlpha = c.muted ? 0.4 : 1;
+        ctx.strokeStyle = sel ? "#ffffff" : color;
+        ctx.lineWidth = sel ? 1.8 : 1;
+        ctx.strokeRect(x + 0.5, yClip0 + 0.5, w - 1, hClip - 1);
+        ctx.globalAlpha = 1;
+
+        // costuras de bucle del archivo
+        const durArch = def?.durSec ?? 0;
+        if (durArch > 0.5 && w > 20 && durArch * pps > 14) {
+          ctx.strokeStyle = "rgba(9,9,11,0.55)";
+          ctx.lineWidth = 1;
+          ctx.setLineDash([2, 3]);
+          let ts = c.inicio + (durArch - (c.offsetOrigen % durArch));
+          while (ts < c.fin - 0.1) {
+            const xs = xDe(ts);
+            if (xs > x + 8 && xs < x2 - 8) {
+              ctx.beginPath();
+              ctx.moveTo(xs + 0.5, yClip0 + 2);
+              ctx.lineTo(xs + 0.5, yClip0 + hClip - 2);
+              ctx.stroke();
+            }
+            ts += durArch;
+          }
+          ctx.setLineDash([]);
+        }
+
+        // asas de borde
+        if (editable && onRecortarSfx && w >= 8) {
+          const gw = Math.min(6, w / 4);
+          const activo =
+            arrastre?.modo === "recorte" &&
+            arrastre.id === c.id &&
+            arrastre.tipo === "sfx";
+          ctx.fillStyle = activo
+            ? "#fbbf24"
+            : sel
+              ? "rgba(251,191,36,0.9)"
+              : "rgba(255,255,255,0.55)";
+          ctx.fillRect(x, yClip0, gw, hClip);
+          ctx.fillRect(x2 - gw, yClip0, gw, hClip);
+        }
+
+        // cuñas de fundido
+        ctx.fillStyle = "rgba(9,9,11,0.55)";
+        if (c.fadeInSeg > 0.05 && c.inicio >= t0) {
+          const xf = Math.min(w, c.fadeInSeg * pps);
+          ctx.beginPath();
+          ctx.moveTo(x, yClip0);
+          ctx.lineTo(x + xf, yClip0);
+          ctx.lineTo(x, yClip0 + hClip - 4);
+          ctx.closePath();
+          ctx.fill();
+        }
+        if (c.fadeOutSeg > 0.05) {
+          const xf = Math.min(w, c.fadeOutSeg * pps);
+          ctx.beginPath();
+          ctx.moveTo(x2, yClip0);
+          ctx.lineTo(x2 - xf, yClip0);
+          ctx.lineTo(x2, yClip0 + hClip - 4);
+          ctx.closePath();
+          ctx.fill();
+        }
+
+        // etiqueta: palabra + volumen (y bucles si alarga el archivo)
+        if (w > 42) {
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(x + 2, yClip0 + 2, w - 4, hClip - 4);
+          ctx.clip();
+          ctx.fillStyle = "#09090b";
+          ctx.font = "bold 9px ui-sans-serif, system-ui, sans-serif";
+          ctx.fillText(
+            c.palabra !== "(manual)" ? c.palabra : (def?.nombre ?? "efecto"),
+            x + 5,
+            yClip0 + 12
+          );
+          ctx.font = "9px ui-monospace, monospace";
+          ctx.fillStyle = "rgba(255,255,255,0.8)";
+          ctx.fillText(
+            `${c.volumenDb > 0 ? "+" : ""}${c.volumenDb}dB${
+              durArch > 0.5 && buclesDeClip(c, durArch) > 1
+                ? ` · bucle×${buclesDeClip(c, durArch)}`
+                : ""
+            }`,
+            x + 5,
+            yClip0 + hClip - 6
+          );
+          ctx.restore();
+        }
+        if (c.muted && w > 26) {
+          ctx.fillStyle = "rgba(228,228,231,0.85)";
+          ctx.font = "8px ui-sans-serif, system-ui, sans-serif";
+          ctx.fillText("MUTE", x + 5, yClip0 + hClip / 2 + 3);
+        }
+      }
+    }
+
     // playhead
     const xPh = xDe(playheadSec);
     if (xPh >= -2 && xPh <= W + 2) {
@@ -506,13 +707,18 @@ export function MixTimeline(props: MixTimelineProps) {
     }
   }, [
     ancho,
+    altoTotal,
     durationSec,
     vistaParaDibujo,
     analysis,
     silences,
     bloques,
+    clipsSfx,
+    conSfx,
+    sfxTop,
     arrastre,
     pistaMap,
+    sfxMap,
     selectedId,
     nivelDb,
     duckDb,
@@ -520,8 +726,10 @@ export function MixTimeline(props: MixTimelineProps) {
     playheadSec,
     hover,
     conArrastre,
+    conArrastreSfx,
     editable,
     onRecortar,
+    onRecortarSfx,
   ]);
 
   useEffect(() => {
@@ -579,7 +787,7 @@ export function MixTimeline(props: MixTimelineProps) {
     [vistaEfectiva, bloques, conArrastre]
   );
 
-  /** ¿El puntero está sobre el borde (asas) de un bloque? */
+  /** ¿El puntero está sobre el borde (asas) de un bloque de música? */
   const hitBorde = useCallback(
     (x: number, y: number): { id: string; lado: LadoRecorte } | null => {
       if (!editable || !onRecortar) return null;
@@ -605,6 +813,49 @@ export function MixTimeline(props: MixTimelineProps) {
     [editable, onRecortar, vistaEfectiva, bloques]
   );
 
+  const hitClipSfx = useCallback(
+    (x: number, y: number): SfxClip | null => {
+      if (!conSfx) return null;
+      const y0 = sfxTop + 12;
+      if (y < y0 || y > sfxTop + SFX_H - 8) return null;
+      const { start: t0, pps } = vistaEfectiva;
+      const t = t0 + x / pps;
+      const lista = (clipsSfx ?? []).map(conArrastreSfx);
+      return (
+        lista.find((c) => t >= c.inicio && t <= c.fin) ??
+        lista.find((c) => t >= c.inicio - 0.15 && t <= c.fin + 0.15) ??
+        null
+      );
+    },
+    [conSfx, sfxTop, vistaEfectiva, clipsSfx, conArrastreSfx]
+  );
+
+  /** ¿El puntero está sobre el borde (asas) de un clip de SFX? */
+  const hitBordeSfx = useCallback(
+    (x: number, y: number): { id: string; lado: LadoRecorte } | null => {
+      if (!editable || !onRecortarSfx || !conSfx) return null;
+      const y0 = sfxTop + 12;
+      if (y < y0 || y > sfxTop + SFX_H - 8) return null;
+      const { start: t0, pps } = vistaEfectiva;
+      const t = t0 + x / pps;
+      const umbral = clamp(EDGE_PX / pps, 0.1, 1.0);
+      let mejor: { id: string; lado: LadoRecorte } | null = null;
+      let mejorDt = Infinity;
+      for (const c of clipsSfx ?? []) {
+        for (const lado of ["inicio", "fin"] as const) {
+          const borde = lado === "inicio" ? c.inicio : c.fin;
+          const dt = Math.abs(t - borde);
+          if (dt < umbral && dt < mejorDt) {
+            mejor = { id: c.id, lado };
+            mejorDt = dt;
+          }
+        }
+      }
+      return mejor;
+    },
+    [editable, onRecortarSfx, conSfx, sfxTop, vistaEfectiva, clipsSfx]
+  );
+
   const enArrastre = useRef(false);
   const panRef = useRef<{ x: number; start: number } | null>(null);
   const pressRef = useRef<{ x: number; y: number; t: number; tiempo: number } | null>(
@@ -621,9 +872,29 @@ export function MixTimeline(props: MixTimelineProps) {
     const { start: t0, pps } = vistaEfectiva;
     const t = t0 + x / pps;
 
-    // arrastre de bloque (solo editable): primero los BORDES (recorte estilo
-    // Camtasia), luego el cuerpo (mover)
+    // arrastre (solo editable): primero los BORDES (recorte estilo Camtasia)
+    // y luego el cuerpo (mover), en el carril de música y en el de efectos
     if (editable) {
+      const bordeSfx = hitBordeSfx(x, y);
+      if (bordeSfx) {
+        const c = (clipsSfx ?? []).find((x2) => x2.id === bordeSfx.id);
+        if (c) {
+          onSelect?.(c.id);
+          enArrastre.current = true;
+          setArrastre({
+            modo: "recorte",
+            tipo: "sfx",
+            id: c.id,
+            lado: bordeSfx.lado,
+            valorOriginal:
+              bordeSfx.lado === "inicio" ? c.inicio : c.fin,
+            valor: bordeSfx.lado === "inicio" ? c.inicio : c.fin,
+          });
+          pressRef.current = { x, y, t, tiempo: performance.now() };
+          ponerCursor("ew-resize");
+          return;
+        }
+      }
       const borde = hitBorde(x, y);
       if (borde) {
         const b = bloques.find((x2) => x2.id === borde.id);
@@ -632,6 +903,7 @@ export function MixTimeline(props: MixTimelineProps) {
           enArrastre.current = true;
           setArrastre({
             modo: "recorte",
+            tipo: "musica",
             id: b.id,
             lado: borde.lado,
             valorOriginal: borde.lado === "inicio" ? b.inicio : b.fin,
@@ -642,12 +914,28 @@ export function MixTimeline(props: MixTimelineProps) {
           return;
         }
       }
+      const c = hitClipSfx(x, y);
+      if (c) {
+        onSelect?.(c.id);
+        enArrastre.current = true;
+        setArrastre({
+          modo: "mover",
+          tipo: "sfx",
+          id: c.id,
+          inicioOriginal: c.inicio,
+          deltaSec: 0,
+        });
+        pressRef.current = { x, y, t, tiempo: performance.now() };
+        ponerCursor("grabbing");
+        return;
+      }
       const b = hitBloque(x, y);
       if (b) {
         onSelect?.(b.id);
         enArrastre.current = true;
         setArrastre({
           modo: "mover",
+          tipo: "musica",
           id: b.id,
           inicioOriginal: b.inicio,
           deltaSec: 0,
@@ -686,11 +974,11 @@ export function MixTimeline(props: MixTimelineProps) {
     // cursor según la zona (borde = recorte, cuerpo = mover)
     if (!enArrastre.current && !panRef.current) {
       if (editable) {
-        const borde = hitBorde(x, y);
+        const borde = hitBordeSfx(x, y) ?? hitBorde(x, y);
         ponerCursor(
           borde
             ? "ew-resize"
-            : hitBloque(x, y)
+            : hitClipSfx(x, y) || hitBloque(x, y)
               ? "grab"
               : "crosshair"
         );
@@ -734,22 +1022,37 @@ export function MixTimeline(props: MixTimelineProps) {
       if (arrastre.modo === "recorte") {
         const movio =
           Math.abs(arrastre.valor - arrastre.valorOriginal) > 0.05;
-        if (movio && onRecortar && editable) {
-          onRecortar(arrastre.id, arrastre.lado, arrastre.valor);
+        if (movio && editable) {
+          if (arrastre.tipo === "sfx") {
+            if (onRecortarSfx)
+              onRecortarSfx(arrastre.id, arrastre.lado, arrastre.valor);
+          } else if (onRecortar) {
+            onRecortar(arrastre.id, arrastre.lado, arrastre.valor);
+          }
         } else if (!movio) {
-          // clic simple sobre el asa → saltar al inicio del bloque
-          const b = bloques.find((x2) => x2.id === arrastre.id);
-          if (b) onSeek(clamp(b.inicio, 0, durationSec));
+          // clic simple sobre el asa → saltar al inicio del bloque/clip
+          if (arrastre.tipo === "sfx") {
+            const c = (clipsSfx ?? []).find((x2) => x2.id === arrastre.id);
+            if (c) onSeek(clamp(c.inicio, 0, durationSec));
+          } else {
+            const b = bloques.find((x2) => x2.id === arrastre.id);
+            if (b) onSeek(clamp(b.inicio, 0, durationSec));
+          }
         }
         return;
       }
       const dur = arrastre.deltaSec;
       const movio = Math.abs(dur) > 0.05;
       const nuevoInicio = arrastre.inicioOriginal + dur;
-      if (movio && onMover && editable) {
-        onMover(arrastre.id, Math.round(nuevoInicio * 10) / 10);
+      if (movio && editable) {
+        if (arrastre.tipo === "sfx") {
+          if (onMoverSfx)
+            onMoverSfx(arrastre.id, Math.round(nuevoInicio * 10) / 10);
+        } else if (onMover) {
+          onMover(arrastre.id, Math.round(nuevoInicio * 10) / 10);
+        }
       } else if (!movio) {
-        // clic simple sobre el bloque → seek al inicio del bloque
+        // clic simple sobre el bloque/clip → seek a su inicio
         onSeek(clamp(arrastre.inicioOriginal, 0, durationSec));
       }
       return;
@@ -777,7 +1080,8 @@ export function MixTimeline(props: MixTimelineProps) {
         onSeek(clamp(tPress, 0, durationSec));
       } else if (editable && rapido && !movio) {
         const b = hitBloque(x, e.clientY - rect.top);
-        if (!b) {
+        const c = hitClipSfx(x, e.clientY - rect.top);
+        if (!b && !c) {
           onSelect?.(null);
           onSeek(clamp(tPress, 0, durationSec));
         }
@@ -797,11 +1101,11 @@ export function MixTimeline(props: MixTimelineProps) {
         <span className="hidden text-[10px] text-zinc-500 md:inline">
           Rueda = zoom · arrastra la regla = pan ·{" "}
           {editable
-            ? "arrastra un bloque para moverlo; sus BORDES, para recortarlo o alargarlo"
+            ? "arrastra un bloque o clip para moverlo; sus BORDES, para recortarlo o alargarlo"
             : "clic en la voz = saltar"}
         </span>
         <span className="md:hidden text-[10px] text-zinc-500">
-          Rueda = zoom · bordes de un bloque = recortar/alargar
+          Rueda = zoom · bordes = recortar/alargar
         </span>
         <div className="ms-auto flex items-center gap-1">
           <Button
@@ -838,7 +1142,7 @@ export function MixTimeline(props: MixTimelineProps) {
       <canvas
         ref={canvasRef}
         className="w-full cursor-crosshair rounded-lg border border-zinc-800 bg-zinc-950 touch-none"
-        style={{ height: RULER_H + NARR_H + MUS_H }}
+        style={{ height: altoTotal }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
@@ -846,7 +1150,7 @@ export function MixTimeline(props: MixTimelineProps) {
           setHover(null);
           ponerCursor("crosshair");
         }}
-        aria-label="Línea de tiempo de la mezcla: narración arriba, bloques de música abajo"
+        aria-label="Línea de tiempo de la mezcla: narración arriba, bloques de música y clips de efectos abajo"
       />
       <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-zinc-500">
         <span className="flex items-center gap-1">
@@ -858,7 +1162,13 @@ export function MixTimeline(props: MixTimelineProps) {
           reducción por ducking
         </span>
         <span>cuñas = fundidos de entrada/salida</span>
-        <span>┊ punteadas = la pista reinicia (bucle)</span>
+        <span>┊ punteadas = el archivo reinicia (bucle)</span>
+        {conSfx && (
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-2 w-2 rounded-sm bg-orange-400" />{" "}
+            pista de efectos
+          </span>
+        )}
       </div>
     </div>
   );
