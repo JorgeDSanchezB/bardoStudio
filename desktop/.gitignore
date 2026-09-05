@@ -1,0 +1,5 @@
+# artefactos de compilación (el empaquetado real ocurre en /tmp vía
+# desktop/empaquetar.sh; esto cubre ejecuciones manuales locales)
+dist/
+recursos-app/
+node_modules/

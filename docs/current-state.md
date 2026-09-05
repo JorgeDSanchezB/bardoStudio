@@ -16,6 +16,8 @@
 
 ## Hitos recientes (ver `worklog.md`)
 
+- **Task 15-exe (instalador Windows)** — `BardoStudio-Setup-1.0.0.exe` (NSIS 64 bits, ~151 MB, español) generado desde Linux sin wine: envoltorio Electron (`desktop/main.cjs`) que copia los recursos a `%APPDATA%\Bardo Studio\app`, sirve el Next standalone con el Node de Electron y abre la ventana; Python 3.12 embebido + ReportLab 4.4.9 para el PDF; icono del exe parcheado con LIEF (hook `afterPack`); parche del builder para extraer el desinstalador con `UninstallerReader` (JS puro). Distribución: botón «Instalador Windows» de la cabecera + `/BardoStudio-Setup-1.0.0.exe` + `LEEME-INSTALACION.txt` en `public/`. Reconstruible con `bash desktop/empaquetar.sh` (ADR-012).
+- **Task 14-sfx-verif** — re-verificación E2E completa de las Entregas 2+3 del módulo SFX (ediciones reales de clips, medidor EFECTOS en vivo, render 4 archivos, PDF con sección SFX, persistencia).
 - **Task 13-sfx-e2e3 (Entregas 2+3)** — módulo SFX terminado: pista «Efectos» en el timeline de Fases 4/5 (arrastre, cuchilla, recorte de bordes con `offsetOrigen` y bucle, silenciar, volumen por clip, cambio de archivo, añadir en el cursor, inspector propio); motor vivo con bus SFX y ducking configurable (½ profundidad); render offline a 6 canales con stem `efectos`; informe PDF con sección SFX y fila 2.5; importación de SFX propios (`db/user-sfx/`, ≤30 MB, nunca re-codificados); clips y ediciones persistidos (localStorage/.bsproj/servidor) y verificados tras recarga.
 - **Task 12-sfx (Entrega 1)** — Fase 2.5: detección por palabras clave sobre la transcripción, biblioteca de 37 SFX CC0 sintetizados, auditoría visual completa, panel de palabras clave editable, stepper de 7 fases.
 - **Task 7-mus** — música propia del usuario y proyectos estilo Camtasia (`.bsproj` portátil, re-adjunte, restauración total tras recarga).
@@ -40,6 +42,7 @@ Estado de primera visita: limpio (localStorage `bardo-project-v1` e IndexedDB `b
 - **Audio tras recarga** (proyecto no guardado): el archivo original no está en memoria; la app muestra el panel «Re-adjuntar el audio original» y la edición sigue disponible. Los proyectos guardados en el servidor restauran el audio solos.
 - **Prisma**: instalado y configurado (`prisma/schema.prisma` + `bun run db:push`) pero **sin uso activo** — la persistencia actual es localStorage/IndexedDB + archivos (ver ADR-001). Disponible si el proyecto crece hacia multiusuario o catálogos relacionales.
 - **tests/**: carpeta reservada, sin pruebas (política actual: verificación E2E con agent-browser + lint + tsc).
+- **Instalador de Windows** (ADR-012): sin firma digital (SmartScreen avisa; documentado), metadatos de versión del exe = Electron (el icono sí es propio), el Python embebido y el flujo de Windows se verifican por partes en Linux (no se puede ejecutar un .exe aquí), y la Fase 2 del instalado requiere que el usuario ponga sus credenciales en `%APPDATA%\Bardo Studio\app\.z-ai-config` (las del entorno NO se empaquetan por seguridad).
 
 ## Ideas futuras candidatas
 

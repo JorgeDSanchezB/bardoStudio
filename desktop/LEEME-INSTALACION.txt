@@ -1,0 +1,76 @@
+BARDO STUDIO · GUÍA DE INSTALACIÓN Y USO (WINDOWS)
+═════════════════════════════════════════════════
+
+REQUISITOS
+  · Windows 10 o 11, 64 bits.
+  · Unos 500 MB de espacio libre en disco.
+  · No necesitas Node, Bun ni Python: todo va incluido.
+
+INSTALACIÓN
+  1. Ejecuta BardoStudio-Setup-1.0.0.exe.
+  2. Si aparece "Windows protegió tu equipo" (SmartScreen, porque el
+     instalador no está firmado): "Más información" → "Ejecutar de todas
+     formas".
+  3. Sigue el asistente (instalación por usuario: no pide permisos de
+     administrador; puedes cambiar la carpeta de destino).
+  4. Al abrir «Bardo Studio» verás unos segundos de preparación: el primer
+     arranque copia los recursos a tu carpeta de datos. Los arranques
+     siguientes son inmediatos.
+
+PRIMEROS PASOS EN LA APP
+  1. Fase 1: pulsa «Demo con voz real (recomendada)» para probar el flujo
+     completo sin grabar nada.
+  2. Para tus propios audiolibros: arrastra o selecciona tu WAV/MP3 de
+     narración (mejor de 3 horas o menos por proyecto).
+
+TRANSCRIPCIÓN CON IA (OPCIONAL, CON TUS CREDENCIALES)
+  La Fase 2 (transcripción + curva de tensión) usa un servicio de IA
+  externo. Para activarlo crea un archivo de texto llamado:
+
+      %APPDATA%\Bardo Studio\app\.z-ai-config
+
+  con este contenido (una sola línea, con TUS datos):
+
+      {"baseUrl": "https://TU-ENDPOINT", "apiKey": "TU-CLAVE"}
+
+  Cierra y reabre Bardo Studio. Sin este archivo, la Fase 2 avisa del fallo
+  y el resto de la aplicación (mezcla, efectos, editor, exportación)
+  funciona con proyectos ya transcritos o con la demo si ya disponía de
+  escenas guardadas.
+
+  También puedes definir variables de entorno generales en:
+
+      %APPDATA%\Bardo Studio\bardo.env
+
+  (líneas CLAVE=VALOR) que se inyectan en el servidor interno.
+
+INFORME PDF
+  Incluye un Python embebido con ReportLab: la Fase 6 genera el PDF sin
+  que instales nada. Si algún antivirus bloquea ese python.exe interno,
+  puedes instalar Python 3.12+ con «pip install reportlab» y Bardo lo
+  usará automáticamente.
+
+DÓNDE VIVEN TUS DATOS
+  %APPDATA%\Bardo Studio\
+  ├── app\                     ← la aplicación en ejecución (no tocar)
+  │   ├── db\user-music\       ← tu música importada
+  │   ├── db\user-sfx\         ← tus efectos importados
+  │   ├── db\proyectos\        ← tus proyectos guardados
+  │   └── .z-ai-config         ← credenciales IA (opcional)
+  ├── bardo-servidor.log       ← registro técnico de soporte
+  └── version-instalada.txt
+
+  Copia de seguridad de TODO tu trabajo: copia la carpeta
+  %APPDATA%\Bardo Studio\app\db
+
+ACTUALIZAR / DESINSTALAR
+  · Actualizar: ejecuta el instalador de la nueva versión; tus datos
+    (música, efectos, proyectos y credenciales) se conservan.
+  · Desinstalar: Configuración → Aplicaciones → Bardo Studio. Los datos
+    quedan en %APPDATA%\Bardo Studio (bórralos a mano si quieres).
+
+PROBLEMAS
+  · La ventana no abre / error del servidor: mira bardo-servidor.log.
+  · Audio entrecortado en el editor: cierra otras apps con audio.
+  · El antivirus enumera el instalador: es el aviso normal de binarios
+    sin firma; verifica el hash SHA256 con el editor antes de ejecutar.

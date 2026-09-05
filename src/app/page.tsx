@@ -18,6 +18,7 @@ import {
   Save,
   FolderOpen,
   FileUp,
+  HardDriveDownload,
 } from "lucide-react";
 import { useProjectStore, snapshotProyecto, type FileMeta } from "@/store/project";
 import { analyzeAudio } from "@/lib/audio/analyze";
@@ -1051,6 +1052,17 @@ export default function Page() {
             <Badge variant="outline" className="text-[10px] text-zinc-400">
               Fase {faseActiva} / 7
             </Badge>
+            {/* instalador de escritorio para Windows (sirve public/BardoStudio-Setup-*.exe) */}
+            <a
+              href="/BardoStudio-Setup-1.0.0.exe"
+              download
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-amber-800/60 px-2 text-[11px] font-medium text-amber-300 transition-colors hover:bg-amber-500/10 hover:text-amber-200"
+              title="Descarga el instalador de escritorio para Windows (NSIS, ~150 MB) — funciona sin conexión una vez instalado; ver LEEME-INSTALACION.txt"
+            >
+              <HardDriveDownload className="h-4 w-4" aria-hidden />
+              <span className="hidden lg:inline">Instalador Windows</span>
+              <span className="sr-only lg:hidden">Descargar el instalador para Windows</span>
+            </a>
             <Button
               variant="ghost"
               size="sm"

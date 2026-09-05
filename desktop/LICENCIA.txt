@@ -1,0 +1,34 @@
+BARDO STUDIO · AVISO DE USO Y LICENCIA
+═════════════════════════════════════
+
+1. QUÉ SE INSTALA
+   Bardo Studio es una aplicación de escritorio (Windows 10/11, 64 bits) que
+   musicaliza narraciones con un flujo auditable de 7 fases. El instalador
+   copia la aplicación (incluida una biblioteca de música y efectos CC0 y un
+   intérprete de Python embebido para el informe PDF) en tu equipo. Todo el
+   procesamiento de audio ocurre EN TU ORDENADOR.
+
+2. AVISO DE SMARTSCREEN
+   El instalador no está firmado digitalmente (sin certificado de pago).
+   Windows puede mostrar "Windows protegió tu equipo". Para continuar:
+   "Más información" → "Ejecutar de todas formas". El hash del archivo se
+   puede verificar con:
+   Get-FileHash BardoStudio-Setup-1.0.0.exe -Algorithm SHA256
+
+3. CONECTIVIDAD
+   La aplicación funciona sin conexión. Solo la transcripción con IA y el
+   análisis de tensión (Fase 2) requieren un servicio externo configurado
+   por TI con tus propias credenciales (ver LEEME-INSTALACION.txt).
+   Ningún dato de audio sale de tu equipo por otras razones.
+
+4. LICENCIA DEL MATERIAL
+   · Código del envoltorio: MIT.
+   · Música y efectos incluidos: síntesis propia del proyecto + CC0.
+   · Tus narraciones, tu música importada y tus proyectos: SON TUYOS y
+     viven en tu carpeta de datos (%APPDATA%\Bardo Studio\app\db).
+
+5. SIN GARANTÍAS
+   Se distribuye "tal cual", sin garantía de ningún tipo. El autor no se
+   responsabiliza de daños derivados de su uso.
+
+Al instalar aceptas los puntos anteriores.

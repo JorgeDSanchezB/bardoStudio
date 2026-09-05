@@ -1,0 +1,19 @@
+{
+  "name": "bardo-studio-escritorio",
+  "productName": "Bardo Studio",
+  "version": "1.0.0",
+  "description": "Musicalización auditable de narraciones · D&D y audiolibros",
+  "author": "Bardo Studio",
+  "license": "MIT",
+  "main": "main.cjs",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "smoke": "electron . --bardo-smoke --no-sandbox",
+    "dist": "electron-builder --win nsis --x64 --config electron-builder.cjs"
+  },
+  "devDependencies": {
+    "electron": "^39.2.0",
+    "electron-builder": "^26.0.12"
+  }
+}

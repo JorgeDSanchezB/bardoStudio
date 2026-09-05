@@ -12,6 +12,10 @@ bun run dev   # servidor en http://localhost:3000 (puerto 3000)
 
 Abre la app y pulsa **«Demo con voz real (recomendada)»** para recorrer el pipeline completo en 3 minutos de audio.
 
+### Versión de escritorio para Windows
+
+Botón **«Instalador Windows»** de la cabecera (o `/BardoStudio-Setup-1.0.0.exe`, ~151 MB): instalador NSIS en español con todo dentro — servidor Next standalone, biblioteca de música/SFX, demo y **Python embebido para el PDF**. Tras instalar, la app corre sin conexión y guarda tus datos en `%APPDATA%\Bardo Studio` (ver `LEEME-INSTALACION.txt`). Para recompilarlo: `bash desktop/empaquetar.sh` (ADR-012).
+
 ## El pipeline de 7 fases
 
 | Fase | Qué hace | Puerta |
