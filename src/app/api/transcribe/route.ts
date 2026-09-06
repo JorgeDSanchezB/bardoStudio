@@ -51,6 +51,17 @@ export async function POST(req: NextRequest) {
     );
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
+    // firma del SDK sin .z-ai-config (p. ej. app de escritorio recién
+    // instalada): mensaje accionable en español → la UI ofrece «Ajustes de IA»
+    if (msg.includes("Configuration file not found")) {
+      return NextResponse.json(
+        {
+          error:
+            "La IA de transcripción no está conectada: abre «Ajustes de IA» (engranaje, arriba a la derecha) y conecta el servicio con la URL de tu Bardo Studio web.",
+        },
+        { status: 500, headers: { "Cache-Control": "no-store" } }
+      );
+    }
     return NextResponse.json(
       { error: `Petición inválida: ${msg}` },
       { status: 500 }

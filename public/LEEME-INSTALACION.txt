@@ -7,7 +7,7 @@ REQUISITOS
   · No necesitas Node, Bun ni Python: todo va incluido.
 
 INSTALACIÓN
-  1. Ejecuta BardoStudio-Setup-1.0.0.exe.
+  1. Ejecuta BardoStudio-Setup-1.0.1.exe.
   2. Si aparece "Windows protegió tu equipo" (SmartScreen, porque el
      instalador no está firmado): "Más información" → "Ejecutar de todas
      formas".
@@ -23,26 +23,37 @@ PRIMEROS PASOS EN LA APP
   2. Para tus propios audiolibros: arrastra o selecciona tu WAV/MP3 de
      narración (mejor de 3 horas o menos por proyecto).
 
-TRANSCRIPCIÓN CON IA (OPCIONAL, CON TUS CREDENCIALES)
-  La Fase 2 (transcripción + curva de tensión) usa un servicio de IA
-  externo. Para activarlo crea un archivo de texto llamado:
+CONECTAR LA IA DE TRANSCRIPCIÓN (UNA VEZ, 30 SEGUNDOS)
+  La Fase 2 (transcripción + curva de tensión) usa un servicio de IA que
+  solo es accesible desde el servidor de la web de Bardo Studio. Para que
+  la app de escritorio pueda usarlo, conéctala a tu web (una sola vez):
 
-      %APPDATA%\Bardo Studio\app\.z-ai-config
+  1. Abre Bardo Studio en el navegador (la misma dirección de siempre,
+     la de donde descargaste el instalador) y entra en «Ajustes IA»
+     (engranaje, arriba): verás la URL con un botón «Copiar».
+  2. En la app de escritorio, pulsa también «Ajustes IA» (engranaje),
+     pega esa URL y pulsa «Conectar»: la app la prueba de verdad y, si
+     responde, queda guardada.
 
-  con este contenido (una sola línea, con TUS datos):
+  A partir de ahí la Fase 2 transcribe con normalidad. La conexión se
+  guarda en %APPDATA%\Bardo Studio\app\.z-ai-config y se conserva al
+  actualizar la app. Si algún día la web cambia de dirección o dejas de
+  usarla, repite los dos pasos con la URL nueva.
 
-      {"baseUrl": "https://TU-ENDPOINT", "apiKey": "TU-CLAVE"}
+  AVISOS HONESTOS
+  · La transcripción y el análisis de tensión necesitan esa conexión
+    mientras los uses (el resto — silencios, música, efectos, mezcla,
+    editor, exportación, informes — funciona 100 % en tu equipo).
+  · Si el análisis de tensión no llega al servicio, la app continúa con
+    su heurística local (se marca como «heurístico»).
 
-  Cierra y reabre Bardo Studio. Sin este archivo, la Fase 2 avisa del fallo
-  y el resto de la aplicación (mezcla, efectos, editor, exportación)
-  funciona con proyectos ya transcritos o con la demo si ya disponía de
-  escenas guardadas.
-
-  También puedes definir variables de entorno generales en:
-
-      %APPDATA%\Bardo Studio\bardo.env
-
-  (líneas CLAVE=VALOR) que se inyectan en el servidor interno.
+  OPCIONES AVANZADAS (solo si tienes TUS propias credenciales)
+  · Credenciales propias: crea %APPDATA%\Bardo Studio\app\.z-ai-config
+    con {"baseUrl": "https://TU-ENDPOINT", "apiKey": "TU-CLAVE"} y
+    reinicia la app (el archivo manual tiene prioridad y la app nunca
+    lo sobrescribe).
+  · Variables de entorno generales en %APPDATA%\Bardo Studio\bardo.env
+    (líneas CLAVE=VALOR), inyectadas en el servidor interno.
 
 INFORME PDF
   Incluye un Python embebido con ReportLab: la Fase 6 genera el PDF sin
@@ -56,7 +67,7 @@ DÓNDE VIVEN TUS DATOS
   │   ├── db\user-music\       ← tu música importada
   │   ├── db\user-sfx\         ← tus efectos importados
   │   ├── db\proyectos\        ← tus proyectos guardados
-  │   └── .z-ai-config         ← credenciales IA (opcional)
+  │   └── .z-ai-config         ← conexión IA guardada (o tus credenciales)
   ├── bardo-servidor.log       ← registro técnico de soporte
   └── version-instalada.txt
 
@@ -65,11 +76,13 @@ DÓNDE VIVEN TUS DATOS
 
 ACTUALIZAR / DESINSTALAR
   · Actualizar: ejecuta el instalador de la nueva versión; tus datos
-    (música, efectos, proyectos y credenciales) se conservan.
+    (música, efectos, proyectos y conexión IA) se conservan.
   · Desinstalar: Configuración → Aplicaciones → Bardo Studio. Los datos
     quedan en %APPDATA%\Bardo Studio (bórralos a mano si quieres).
 
 PROBLEMAS
+  · «La IA de transcripción no está conectada»: abre «Ajustes IA» y
+    conecta la URL de tu web (sección anterior).
   · La ventana no abre / error del servidor: mira bardo-servidor.log.
   · Audio entrecortado en el editor: cierra otras apps con audio.
   · El antivirus enumera el instalador: es el aviso normal de binarios

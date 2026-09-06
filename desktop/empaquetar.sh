@@ -81,6 +81,22 @@ find "$RECURSOS/scripts" -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/nu
 [ -d "$RECURSOS/public/sfx" ]                                  || die "falta la biblioteca de SFX"
 # nada de binarios linux innecesarios
 rm -rf "$RECURSOS/node_modules/sharp" "$RECURSOS/node_modules/@img" 2>/dev/null || true
+# Next 16 (Turbopack, output:standalone) copia el proyecto COMPLETO dentro de
+# .next/standalone: se eliminan los inertes (skills/, src/, docs/… ~62 MB) y
+# cualquier documento interno — solo queda el servidor ejecutable
+rm -rf "$RECURSOS/skills" "$RECURSOS/src" "$RECURSOS/tool-results" \
+      "$RECURSOS/desktop" "$RECURSOS/docs" "$RECURSOS/examples" \
+      "$RECURSOS/tests" "$RECURSOS/prisma" "$RECURSOS/download" \
+      "$RECURSOS/upload" "$RECURSOS/db"
+rm -f  "$RECURSOS/AGENTS.md" "$RECURSOS/CLAUDE.md" "$RECURSOS/README.md" \
+       "$RECURSOS/worklog.md" "$RECURSOS/bun.lock" "$RECURSOS/Caddyfile" \
+       "$RECURSOS/components.json" "$RECURSOS/eslint.config.mjs" \
+       "$RECURSOS/next.config.ts" "$RECURSOS/postcss.config.mjs" \
+       "$RECURSOS/tailwind.config.ts" "$RECURSOS/tsconfig.json" \
+       "$RECURSOS/tsconfig.tsbuildinfo" "$RECURSOS/.z-ai-config"
+# el servidor standalone solo necesita: server.js, package.json, node_modules,
+# .next, public, config, scripts (+ py-win y LEEME añadidos después)
+[ -d "$RECURSOS/.next" ] || die "falta .next del standalone"
 # Next standalone incluye el .env del entorno: fuera (higiene)
 rm -f "$RECURSOS/.env"
 
@@ -141,30 +157,39 @@ fi
 [ -x node_modules/electron/dist/electron ] || die "Electron no se descargó"
 
 # parche: extraer el desinstalador sin wine en Linux (UninstallerReader es
-# JS puro, como en la rama de macOS; wine no existe en este entorno)
+# JS puro, como en la rama de macOS; wine no existe en este entorno).
+# Regex tolerante: electron-builder 26.0.x usa packager.config.wine y
+# 26.15.x usa _a.wine en la misma línea
 python3 - <<'PYEOF'
+import re
 ruta = "node_modules/app-builder-lib/out/targets/nsis/NsisTarget.js"
-src = open(ruta).read()
-viejo = '''        else {
-            const wineVm = new WineVm_1.WineVmManager((_a = packager.config.toolsets) === null || _a === void 0 ? void 0 : _a.wine);
-            await wineVm.exec(installerPath, [], { env: { __COMPAT_LAYER: "RunAsInvoker" } });
-        }'''
-nuevo = '''        else {
-            // BARDO: extraer el desinstalador sin wine (lector PE en JS puro,
-            // como en la rama de macOS Catalina). Si falla, se cae a wine.
-            try {
-                await nsisUtil_1.UninstallerReader.exec(installerPath, uninstallerPath);
-            } catch (error) {
-                const wineVm = new WineVm_1.WineVmManager((_a = packager.config.toolsets) === null || _a === void 0 ? void 0 : _a.wine);
-                await wineVm.exec(installerPath, [], { env: { __COMPAT_LAYER: "RunAsInvoker" } });
-            }
-        }'''
-if nuevo.strip() not in src:
-    assert viejo in src, "patrón NSIS/wine no encontrado en NsisTarget.js"
-    open(ruta, "w").write(src.replace(viejo, nuevo))
-    print("NsisTarget.js parcheado (desinstalador sin wine) ✓")
+src = open(ruta, encoding="utf-8").read()
+if "BARDO:" in src:
+    print("NsisTarget.js ya estaba parcheado \u2713")
 else:
-    print("NsisTarget.js ya estaba parcheado ✓")
+    pat = re.compile(
+        r'        else \{\n'
+        r'            const wineVm = new WineVm_1\.WineVmManager\(\(_a = packager\.config\.toolsets\) === null \|\| _a === void 0 \? void 0 : (?:packager\.config\.|_a\.)wine\);\n'
+        r'            await wineVm\.exec\(installerPath, \[\], \{ env: \{ __COMPAT_LAYER: "RunAsInvoker" \} \}\);\n'
+        r'        \}'
+    )
+    m = pat.search(src)
+    assert m, "patron NSIS/wine no encontrado en NsisTarget.js"
+    reemplazo = (
+        '        else {\n'
+        '            // BARDO: extraer el desinstalador sin wine (lector PE en JS puro,\n'
+        '            // como en la rama de macOS). Si falla, se cae a wine.\n'
+        '            try {\n'
+        '                await nsisUtil_1.UninstallerReader.exec(installerPath, uninstallerPath);\n'
+        '            }\n'
+        '            catch (error) {\n'
+        '                const wineVm = new WineVm_1.WineVmManager((_a = packager.config.toolsets) === null || _a === void 0 ? void 0 : _a.wine);\n'
+        '                await wineVm.exec(installerPath, [], { env: { __COMPAT_LAYER: "RunAsInvoker" } });\n'
+        '            }\n'
+        '        }'
+    )
+    open(ruta, "w", encoding="utf-8").write(src[: m.start()] + reemplazo + src[m.end():])
+    print("NsisTarget.js parcheado (desinstalador sin wine) \u2713")
 PYEOF
 
 # ── 6 · prueba real de la app (arranque + servidor + ventana) ───────

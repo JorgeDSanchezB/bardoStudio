@@ -19,6 +19,7 @@ import {
   FolderOpen,
   FileUp,
   HardDriveDownload,
+  Settings2,
 } from "lucide-react";
 import { useProjectStore, snapshotProyecto, type FileMeta } from "@/store/project";
 import { analyzeAudio } from "@/lib/audio/analyze";
@@ -50,6 +51,7 @@ import { ejecutarFase2 } from "@/lib/fase2/pipeline";
 import { FASE2_CONFIG_DEFECTO } from "@/lib/fase2/types";
 import { GuardarDialog } from "@/components/bardo/guardar-dialog";
 import { ProyectosDialog } from "@/components/bardo/proyectos-dialog";
+import { AjustesIaDialog } from "@/components/bardo/ajustes-ia-dialog";
 import {
   TIPO_PROYECTO,
   VERSION_PROYECTO,
@@ -105,6 +107,10 @@ export default function Page() {
   const sourceMissing = useProjectStore((s) => s.sourceMissing);
   const [dialogoGuardar, setDialogoGuardar] = useState(false);
   const [dialogoProyectos, setDialogoProyectos] = useState(false);
+  const [dialogoIa, setDialogoIa] = useState(false);
+  // estado de la conexión IA para el aviso de la cabecera ("sin conectar"
+  // solo ocurre en la app de escritorio sin relé configurado)
+  const [iaSinConectar, setIaSinConectar] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [errorGuardar, setErrorGuardar] = useState<string | null>(null);
   const [descargando, setDescargando] = useState(false);
@@ -118,6 +124,16 @@ export default function Page() {
     if (api.hasHydrated()) setHydrated(true);
     const un = api.onFinishHydration(() => setHydrated(true));
     return () => un();
+  }, []);
+
+  // ---------- estado de la conexión IA (punto ámbar del engranaje) ----------
+  // en la web siempre hay config del servidor; solo la app de escritorio
+  // sin relé configurado queda "sin conectar" (fallo de Fase 2 evitable)
+  useEffect(() => {
+    fetch("/api/ia-config", { cache: "no-store" })
+      .then((r) => r.json() as Promise<{ modo?: string }>)
+      .then((d) => setIaSinConectar(d?.modo === "ninguno"))
+      .catch(() => setIaSinConectar(false));
   }, []);
 
   // ---------- restauración tras recargar ----------
@@ -1054,7 +1070,7 @@ export default function Page() {
             </Badge>
             {/* instalador de escritorio para Windows (sirve public/BardoStudio-Setup-*.exe) */}
             <a
-              href="/BardoStudio-Setup-1.0.0.exe"
+              href="/BardoStudio-Setup-1.0.1.exe"
               download
               className="inline-flex h-8 items-center gap-1.5 rounded-md border border-amber-800/60 px-2 text-[11px] font-medium text-amber-300 transition-colors hover:bg-amber-500/10 hover:text-amber-200"
               title="Descarga el instalador de escritorio para Windows (NSIS, ~150 MB) — funciona sin conexión una vez instalado; ver LEEME-INSTALACION.txt"
@@ -1063,6 +1079,25 @@ export default function Page() {
               <span className="hidden lg:inline">Instalador Windows</span>
               <span className="sr-only lg:hidden">Descargar el instalador para Windows</span>
             </a>
+            {/* ajustes de IA: en el escritorio permite conectar el relé de
+                transcripción; en la web muestra la URL para copiar */}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="relative h-8 gap-1.5 px-2 text-[11px] text-zinc-300"
+              onClick={() => setDialogoIa(true)}
+              title="Ajustes de IA: conexión del servicio de transcripción (Fase 2)"
+            >
+              {iaSinConectar && (
+                <span
+                  className="absolute left-1 top-1 h-1.5 w-1.5 rounded-full bg-amber-400"
+                  aria-hidden
+                />
+              )}
+              <Settings2 className="h-4 w-4" aria-hidden />
+              <span className="hidden lg:inline">Ajustes IA</span>
+              <span className="sr-only lg:hidden">Ajustes de IA</span>
+            </Button>
             <Button
               variant="ghost"
               size="sm"
@@ -1336,15 +1371,54 @@ export default function Page() {
                         </div>
 
                         {fase2.status === "error" && fase2.error && (
-                          <Alert variant="destructive">
-                            <AlertTriangle className="h-4 w-4" />
-                            <AlertTitle>Error durante la Fase 2</AlertTitle>
-                            <AlertDescription>
-                              {fase2.error} — el progreso por bloques ya guardado
-                              se conserva: pulsa el botón para continuar donde se
-                              quedó.
-                            </AlertDescription>
-                          </Alert>
+                          <>
+                            {(fase2.error.includes("Ajustes de IA") ||
+                              fase2.error.includes(
+                                "Configuration file not found"
+                              )) && (
+                              <Alert className="border-amber-800/60 bg-amber-950/10 text-amber-200">
+                                <Settings2 className="h-4 w-4" />
+                                <AlertTitle>
+                                  La IA de transcripción no está conectada
+                                </AlertTitle>
+                                <AlertDescription className="space-y-2">
+                                  <span>
+                                    Conecta el servicio una vez en «Ajustes de
+                                    IA» (engranaje, arriba) y vuelve a lanzar la
+                                    Fase 2: el progreso por bloques ya guardado
+                                    se conserva y continuará donde se quedó.
+                                  </span>
+                                  <span className="block">
+                                    <Button
+                                      size="sm"
+                                      className="h-8 gap-1.5 bg-amber-500 text-xs font-semibold text-zinc-950 hover:bg-amber-400"
+                                      onClick={() => setDialogoIa(true)}
+                                    >
+                                      <Settings2
+                                        className="h-3.5 w-3.5"
+                                        aria-hidden
+                                      />
+                                      Conectar la IA…
+                                    </Button>
+                                  </span>
+                                </AlertDescription>
+                              </Alert>
+                            )}
+                            {!fase2.error.includes("Ajustes de IA") &&
+                              !fase2.error.includes(
+                                "Configuration file not found"
+                              ) && (
+                                <Alert variant="destructive">
+                                  <AlertTriangle className="h-4 w-4" />
+                                  <AlertTitle>Error durante la Fase 2</AlertTitle>
+                                  <AlertDescription>
+                                    {fase2.error} — el progreso por bloques ya
+                                    guardado se conserva: pulsa el botón para
+                                    continuar donde se quedó.
+                                  </AlertDescription>
+                                </Alert>
+                              )}
+                          </>
                         )}
 
                         {/* arranque / reanudación */}
@@ -1684,6 +1758,8 @@ export default function Page() {
           if (confirmarDescartar()) resetAll();
         }}
       />
+
+      <AjustesIaDialog open={dialogoIa} onOpenChange={setDialogoIa} />
 
       {/* Elemento de audio siempre montado (los efectos conectan src y
           eventos desde el primer render) */}

@@ -14,7 +14,9 @@ Abre la app y pulsa **«Demo con voz real (recomendada)»** para recorrer el pip
 
 ### Versión de escritorio para Windows
 
-Botón **«Instalador Windows»** de la cabecera (o `/BardoStudio-Setup-1.0.0.exe`, ~151 MB): instalador NSIS en español con todo dentro — servidor Next standalone, biblioteca de música/SFX, demo y **Python embebido para el PDF**. Tras instalar, la app corre sin conexión y guarda tus datos en `%APPDATA%\Bardo Studio` (ver `LEEME-INSTALACION.txt`). Para recompilarlo: `bash desktop/empaquetar.sh` (ADR-012).
+Botón **«Instalador Windows»** de la cabecera (o `/BardoStudio-Setup-1.0.1.exe`, ~151 MB): instalador NSIS en español con todo dentro — servidor Next standalone, biblioteca de música/SFX, demo y **Python embebido para el PDF**. Tras instalar, la app corre sin conexión y guarda tus datos en `%APPDATA%\Bardo Studio` (ver `LEEME-INSTALACION.txt`). Para recompilarlo: `bash desktop/empaquetar.sh` (ADR-012).
+
+**IA de la Fase 2 en el escritorio**: el servicio de transcripción/tensión solo es alcanzable desde el servidor de la web, así que la app instalada se conecta por **relé** una sola vez («Ajustes IA» → pegas la URL de tu web → «Conectar», con prueba real; ADR-013). Sin conexión de IA, el resto de la app (silencios, música, efectos, mezcla, editor, exportación, PDF) funciona 100 % en local.
 
 ## El pipeline de 7 fases
 
