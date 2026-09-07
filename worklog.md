@@ -443,3 +443,20 @@ Work Log:
 
 Stage Summary:
 - Repo local 100% listo para respaldar: limpio, con el instalador y datos privados excluidos, remote configurado. PENDIENTE: el push final requiere que el usuario genere un PAT (repo scope) y lo proporcione; entonces se ejecuta push -u origin main (manejando posible README autogenerado del remoto con merge --allow-unrelated-histories -X ours o force si el remoto está recién creado).
+
+---
+Task ID: 18 (continuación)
+Agent: main (Z.ai Code)
+Task: Completar el push del respaldo a GitHub (el primer token sin scopes dio 403; el segundo token con scope repo permitió autenticar, pero el push fue rechazado por blobs .exe de 151 MB en commits antiguos).
+
+Work Log:
+- Token 1 sin scopes (403) → usuario generó token 2 con scope repo ✅.
+- Push rechazado (GH001): los instaladores 1.0.0/1.0.1/1.0.2 (151 MB c/u) vivían en blobs del HISTORIAL (commits d05f657, dbff043, 163f475) aunque HEAD ya no los trackeaba.
+- Instalado git-filter-repo (script único descargado a ~/bin, pip bloqueado por virtualenv) y reescrito el historial: --invert-paths de los 3 .exe en los 19 commits → hashes nuevos (HEAD 774b8fb), mensajes y estructura intactos, blob más grande ahora 15.4 MB (wav demo).
+- El instalador 1.0.2 PERMANECE en disco public/ como archivo no trackeado (la web sigue sirviéndolo en /BardoStudio-Setup-1.0.2.exe).
+- Re-agregado remote origin (filter-repo lo quita por seguridad) y push exitoso: * [new branch] main -> main.
+- Limpieza de seguridad: upstream re-apuntado a origin/main y token ELIMINADO de .git/config (git push -u lo había embebido en la URL de tracking).
+- Verificado vía API: repo JorgeDSanchezB/bardoStudio público, default branch main.
+
+Stage Summary:
+- RESPALDO COMPLETO EN GITHUB: https://github.com/JorgeDSanchezB/bardoStudio — 19 commits, 259 archivos de código (fases 1-7, SFX, IA multi-proveedor, desktop, docs/ADRs, scripts), historial limpio sin instaladores ni datos runtime ni claves. Pendiente para el usuario: revocar el token compartido en el chat (https://github.com/settings/tokens).
