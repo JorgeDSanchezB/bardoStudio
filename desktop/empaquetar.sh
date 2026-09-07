@@ -55,6 +55,7 @@ tar cf - \
   --exclude=./desktop/recursos-app \
   --exclude='./public/BardoStudio-Setup-*.exe' \
   --exclude=./.z-ai-config \
+  --exclude=./.bardo-ia.json \
   --exclude=./.env \
   . | (cd "$ETAPA" && tar xf -)
 
@@ -93,7 +94,9 @@ rm -f  "$RECURSOS/AGENTS.md" "$RECURSOS/CLAUDE.md" "$RECURSOS/README.md" \
        "$RECURSOS/components.json" "$RECURSOS/eslint.config.mjs" \
        "$RECURSOS/next.config.ts" "$RECURSOS/postcss.config.mjs" \
        "$RECURSOS/tailwind.config.ts" "$RECURSOS/tsconfig.json" \
-       "$RECURSOS/tsconfig.tsbuildinfo" "$RECURSOS/.z-ai-config"
+       "$RECURSOS/tsconfig.tsbuildinfo" "$RECURSOS/.z-ai-config" \
+       "$RECURSOS/.bardo-ia.json" \
+       "$RECURSOS/.env"
 # el servidor standalone solo necesita: server.js, package.json, node_modules,
 # .next, public, config, scripts (+ py-win y LEEME añadidos después)
 [ -d "$RECURSOS/.next" ] || die "falta .next del standalone"

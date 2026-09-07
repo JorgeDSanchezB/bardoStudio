@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
+import { obtenerProveedor } from "@/lib/server/ia";
 
 /**
- * POST /api/transcribe — skill ASR del SDK (z-ai-web-dev-sdk, SOLO backend).
- * Recibe { audioBase64 } (WAV mono 16 kHz, ≤ 30 s) y devuelve { texto }.
- * El servicio es estricto con el rate-limit (429): se reintenta con backoff.
+ * POST /api/transcribe — transcripción ASR con el PROVEEDOR ACTIVO (ADR-014).
+ *
+ * La IA es reemplazable: Z.AI incluida, API propia compatible OpenAI
+ * (OpenAI/Groq/Mistral/servidores locales) o Deepgram — ver «Ajustes de IA»
+ * y /api/ia-proveedores. Recibe { audioBase64 } (WAV mono 16 kHz, ≤ 30 s)
+ * y devuelve { texto }.
+ *
+ * Reintentos: 429 (rate-limit) y fallos transitorios de red, con backoff.
  */
 
 export const runtime = "nodejs";
@@ -13,6 +19,11 @@ const MAX_INTENTOS = 3;
 const PAUSA_MS = 1400;
 
 const dormir = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+const reintentable = (msg: string) =>
+  /\b429\b/.test(msg) ||
+  /\b5\d\d\b/.test(msg) ||
+  /timeout|aborted|network|fetch failed|ECONN|ENOTFOUND|EAI_AGAIN/i.test(msg);
 
 export async function POST(req: NextRequest) {
   try {
@@ -25,43 +36,40 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const ZAI = (await import("z-ai-web-dev-sdk")).default;
-    const zai = await ZAI.create();
+    const proveedor = await obtenerProveedor();
+    if (!proveedor) {
+      return NextResponse.json(
+        {
+          error:
+            "La IA de transcripción no está conectada: abre «Ajustes de IA» (engranaje, arriba a la derecha) y conecta tu propia API (OpenAI, Groq, Mistral, Deepgram u otra compatible) o el servicio de la web de Bardo Studio.",
+        },
+        { status: 500, headers: { "Cache-Control": "no-store" } }
+      );
+    }
 
     let ultimoError = "sin detalle";
     for (let intento = 1; intento <= MAX_INTENTOS; intento++) {
       try {
-        const resp = await zai.audio.asr.create({ file_base64: audioBase64 });
-        const texto = typeof resp?.text === "string" ? resp.text.trim() : "";
+        const texto = await proveedor.transcribirWav(audioBase64);
         return NextResponse.json(
           { texto },
           { headers: { "Cache-Control": "no-store" } }
         );
       } catch (e) {
         ultimoError = e instanceof Error ? e.message : String(e);
-        const saturado = ultimoError.includes("429") || ultimoError.toLowerCase().includes("too many");
-        if (!saturado || intento === MAX_INTENTOS) break;
+        if (!reintentable(ultimoError) || intento === MAX_INTENTOS) break;
         await dormir(PAUSA_MS * intento);
       }
     }
 
     return NextResponse.json(
-      { error: `El servicio de transcripción falló: ${ultimoError}` },
-      { status: 502 }
+      {
+        error: `El proveedor de transcripción «${proveedor.nombre}» falló: ${ultimoError}`,
+      },
+      { status: 502, headers: { "Cache-Control": "no-store" } }
     );
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    // firma del SDK sin .z-ai-config (p. ej. app de escritorio recién
-    // instalada): mensaje accionable en español → la UI ofrece «Ajustes de IA»
-    if (msg.includes("Configuration file not found")) {
-      return NextResponse.json(
-        {
-          error:
-            "La IA de transcripción no está conectada: abre «Ajustes de IA» (engranaje, arriba a la derecha) y conecta el servicio con la URL de tu Bardo Studio web.",
-        },
-        { status: 500, headers: { "Cache-Control": "no-store" } }
-      );
-    }
     return NextResponse.json(
       { error: `Petición inválida: ${msg}` },
       { status: 500 }

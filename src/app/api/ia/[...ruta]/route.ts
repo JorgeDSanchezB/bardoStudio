@@ -10,7 +10,7 @@ import path from "node:path";
  * servidor de esta web: la app de escritorio no puede llamarla directamente.
  * Este relé reenvía un conjunto MUY acotado de rutas con las credenciales del
  * servidor, de modo que la app instalada pueda usar la Fase 2 conectándose a
- * la URL pública de esta web (ver /api/ia-config y Ajustes de IA en la UI).
+ * la URL pública de esta web (ver /api/ia-proveedores y Ajustes de IA en la UI).
  *
  * Rutas admitidas (whitelist): chat/completions y audio/asr — exactamente las
  * que usa la app. El resto → 404.

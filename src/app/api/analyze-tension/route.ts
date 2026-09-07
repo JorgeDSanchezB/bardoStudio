@@ -2,15 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { readFile } from "fs/promises";
 import path from "node:path";
 import { esAnimo, type Animo, type FuenteEmocion } from "@/lib/fase2/types";
+import { obtenerProveedor } from "@/lib/server/ia";
 
 /**
- * POST /api/analyze-tension — skill LLM del SDK (z-ai-web-dev-sdk, SOLO
- * backend). Recibe { escenas: [{ id, texto, energia }] } y puntúa cada una:
- * tensión 0-100 + ánimo + razón. El motor combina (con los pesos de
+ * POST /api/analyze-tension — LLM del PROVEEDOR ACTIVO (ADR-014) con
+ * respaldo local. Recibe { escenas: [{ id, texto, energia }] } y puntúa cada
+ * una: tensión 0-100 + ánimo + razón. El motor combina (con los pesos de
  * config/config.json) la tensión TEXTUAL con la ENERGÍA de audio enviada.
  *
- * Respaldo «modo seguro»: si el LLM falla → heurística local con los léxicos
- * editables de config.json (marcada con fuente="heuristico" en la UI).
+ * Respaldo «modo seguro»: si el LLM falla (o el proveedor solo transcribe,
+ * p. ej. Deepgram) → heurística local con los léxicos editables de
+ * config.json (marcada con fuente="heuristico" en la UI).
  */
 
 export const runtime = "nodejs";
@@ -149,7 +151,7 @@ export async function POST(req: NextRequest) {
     const pesoAudio = clamp(Number(cfg.emocion?.pesosAudio ?? 0.3), 0, 1);
     const lexicos = cfg.lexicos ?? {};
 
-    // ---- llamada al LLM (con un reintento) ----
+    // ---- llamada al LLM del proveedor activo (reintentos heurísticos abajo) ----
     let crudos: Array<{
       id: string;
       tension: number;
@@ -160,34 +162,35 @@ export async function POST(req: NextRequest) {
     let aviso: string | undefined;
 
     try {
-      const ZAI = (await import("z-ai-web-dev-sdk")).default;
-      const zai = await ZAI.create();
-      const lista = escenas.map((e) => ({
-        id: e.id,
-        texto: e.texto.slice(0, 600),
-      }));
-      const completion = await zai.chat.completions.create({
-        messages: [
-          { role: "assistant", content: SISTEMA },
-          { role: "user", content: JSON.stringify({ escenas: lista }) },
-        ],
-        thinking: { type: "disabled" },
-      });
-      const bruto = completion.choices[0]?.message?.content ?? "";
-      const json = extraerJson(bruto);
-      const parseado = json
-        ? (JSON.parse(json) as { resultados?: unknown })
-        : null;
-      if (parseado && Array.isArray(parseado.resultados)) {
-        crudos = parseado.resultados as {
-          id: string;
-          tension: number;
-          animo: string;
-          razon?: string;
-        }[];
-      } else {
-        aviso = "El LLM no devolvió JSON válido; se usó la heurística local.";
+      const proveedor = await obtenerProveedor();
+      if (!proveedor) {
         motor = "heuristico";
+        aviso =
+          "La IA no está conectada (Ajustes de IA); se usó la heurística local.";
+      } else {
+        const lista = escenas.map((e) => ({
+          id: e.id,
+          texto: e.texto.slice(0, 600),
+        }));
+        const bruto = await proveedor.chat(
+          SISTEMA,
+          JSON.stringify({ escenas: lista })
+        );
+        const json = extraerJson(bruto);
+        const parseado = json
+          ? (JSON.parse(json) as { resultados?: unknown })
+          : null;
+        if (parseado && Array.isArray(parseado.resultados)) {
+          crudos = parseado.resultados as {
+            id: string;
+            tension: number;
+            animo: string;
+            razon?: string;
+          }[];
+        } else {
+          aviso = "El LLM no devolvió JSON válido; se usó la heurística local.";
+          motor = "heuristico";
+        }
       }
     } catch {
       motor = "heuristico";

@@ -6,7 +6,8 @@
  *  1. Al arrancar copia los recursos empaquetados (servidor Next, public,
  *     config, scripts y el Python embebido del PDF) a una carpeta ESCRITURABLE
  *     del usuario (%APPDATA%\Bardo Studio\app en Windows), conservando los
- *     datos del usuario (db/, .z-ai-config) entre actualizaciones.
+ *     datos del usuario (db/, .z-ai-config, .bardo-ia.json) entre
+ *     actualizaciones.
  *  2. Lanza el servidor con el Node integrado de Electron (puerto local
  *     libre, solo 127.0.0.1) y espera a que responda.
  *  3. Abre una ventana apuntando al servidor local.
@@ -79,8 +80,9 @@ function leerEnvUsuario() {
 
 /**
  * Copia los recursos a la carpeta del usuario si la versión cambió.
- * Conserva entre versiones: db/ (música y SFX propios, proyectos) y
- * .z-ai-config (credenciales de IA del usuario, si las puso).
+ * Conserva entre versiones: db/ (música y SFX propios, proyectos),
+ * .z-ai-config (relé/credenciales Z.AI) y .bardo-ia.json (proveedores de IA
+ * propios del usuario: OpenAI/Groq/Deepgram con sus claves).
  */
 function instalarRecursos() {
   const destino = dirApp();
@@ -99,7 +101,7 @@ function instalarRecursos() {
   const respaldo = path.join(dirUsuario(), "respaldo-datos");
   fs.rmSync(respaldo, { recursive: true, force: true });
   fs.mkdirSync(respaldo, { recursive: true });
-  const conservar = ["db", ".z-ai-config"];
+  const conservar = ["db", ".z-ai-config", ".bardo-ia.json"];
   for (const nombre of conservar) {
     const ruta = path.join(destino, nombre);
     if (fs.existsSync(ruta)) {
@@ -117,6 +119,7 @@ function instalarRecursos() {
         rel !== "db" &&
         !rel.startsWith(`db${path.sep}`) &&
         rel !== ".z-ai-config" &&
+        rel !== ".bardo-ia.json" &&
         rel !== "bardo.env"
       );
     },

@@ -127,12 +127,12 @@ export default function Page() {
   }, []);
 
   // ---------- estado de la conexión IA (punto ámbar del engranaje) ----------
-  // en la web siempre hay config del servidor; solo la app de escritorio
-  // sin relé configurado queda "sin conectar" (fallo de Fase 2 evitable)
+  // la web tiene Z.AI del servidor; la IA es reemplazable (ADR-014) y solo
+  // queda "sin conectar" si no hay ningún proveedor configurado
   useEffect(() => {
-    fetch("/api/ia-config", { cache: "no-store" })
-      .then((r) => r.json() as Promise<{ modo?: string }>)
-      .then((d) => setIaSinConectar(d?.modo === "ninguno"))
+    fetch("/api/ia-proveedores", { cache: "no-store" })
+      .then((r) => r.json() as Promise<{ activo?: string }>)
+      .then((d) => setIaSinConectar(d?.activo === "ninguno"))
       .catch(() => setIaSinConectar(false));
   }, []);
 
@@ -1070,7 +1070,7 @@ export default function Page() {
             </Badge>
             {/* instalador de escritorio para Windows (sirve public/BardoStudio-Setup-*.exe) */}
             <a
-              href="/BardoStudio-Setup-1.0.1.exe"
+              href="/BardoStudio-Setup-1.0.2.exe"
               download
               className="inline-flex h-8 items-center gap-1.5 rounded-md border border-amber-800/60 px-2 text-[11px] font-medium text-amber-300 transition-colors hover:bg-amber-500/10 hover:text-amber-200"
               title="Descarga el instalador de escritorio para Windows (NSIS, ~150 MB) — funciona sin conexión una vez instalado; ver LEEME-INSTALACION.txt"
@@ -1079,8 +1079,8 @@ export default function Page() {
               <span className="hidden lg:inline">Instalador Windows</span>
               <span className="sr-only lg:hidden">Descargar el instalador para Windows</span>
             </a>
-            {/* ajustes de IA: en el escritorio permite conectar el relé de
-                transcripción; en la web muestra la URL para copiar */}
+            {/* ajustes de IA: proveedores reemplazables (Z.AI incluida / API
+                propia OpenAI-compatible / Deepgram) para la Fase 2 */}
             <Button
               variant="ghost"
               size="sm"
