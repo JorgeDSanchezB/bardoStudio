@@ -53,3 +53,20 @@ server.log
 # Skills directory
 /skills
 .bardo-ia.json
+
+# Instaladores de escritorio (NO se respaldan en git — 151 MB, excede límite de GitHub)
+*.exe
+public/*.exe
+desktop/dist/
+desktop/release/
+desktop/build/
+
+# Datos runtime (base de datos local y música del usuario)
+db/custom.db
+db/user-music/
+
+# Archivos temporales de herramientas
+tool-results/
+
+# Sistema
+Thumbs.db
