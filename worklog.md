@@ -426,3 +426,20 @@ Work Log:
 
 Stage Summary:
 - La IA de la Fase 2 ya es REEMPLAZABLE: la app de escritorio transcribe con la API propia del usuario (OpenAI/Groq/Mistral/servidor local con formato OpenAI, o Deepgram) hablando DIRECTAMENTE con el servicio elegido, o mantiene la Z.AI incluida (directa en la web, relé en el escritorio) — el usuario elige en «Ajustes IA» y las claves nunca salen de su equipo hacia Bardo Studio. INSTALADOR 1.0.2 PUBLICADO y descargable (botón «Instalador Windows» de la web); el 1.0.1 fue retirado. Cadena verificada de punta a punta con mock real + zai real; smoke de escritorio OK.
+
+---
+Task ID: 18
+Agent: main (Z.ai Code)
+Task: Respaldo del proyecto en GitHub (https://github.com/JorgeDSanchezB/bardoStudio), ignorando el instalador .exe.
+
+Work Log:
+- Verificado estado git: repo local ya inicializado (branch main, historial de 6 commits hasta «Instalador 1.0.2 publicado»), working tree limpio, SIN remote.
+- Detectado que public/BardoStudio-Setup-1.0.2.exe (151 MB) estaba trackeado → excede el límite de 100 MB por archivo de GitHub; el push habría fallado.
+- .gitignore ampliado: *.exe, public/*.exe, desktop/dist|release|build, db/custom.db, db/user-music/ (datos runtime y música del usuario), tool-results/ (12 temporales), Thumbs.db. Ya cubría .z-ai-config y .bardo-ia.json (claves nunca al repo).
+- git rm -r --cached del instalador, db runtime y tool-results (los archivos PERMANECEN en el disco; solo salen del índice).
+- Commit 9d062d1: «chore(git): excluir instalador .exe (151MB), base de datos runtime, música del usuario y temporales del respaldo» — 18 archivos fuera, 259 de código puro en el índice.
+- Remote agregado: origin → https://github.com/JorgeDSanchezB/bardoStudio.git
+- Push intentado (GIT_TERMINAL_PROMPT=0): «could not read Username» — el sandbox NO tiene credenciales del usuario (sin tokens en env, sin SSH, sin gh CLI). Se necesita un Personal Access Token del usuario para completar el push.
+
+Stage Summary:
+- Repo local 100% listo para respaldar: limpio, con el instalador y datos privados excluidos, remote configurado. PENDIENTE: el push final requiere que el usuario genere un PAT (repo scope) y lo proporcione; entonces se ejecuta push -u origin main (manejando posible README autogenerado del remoto con merge --allow-unrelated-histories -X ours o force si el remoto está recién creado).
