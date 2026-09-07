@@ -460,3 +460,24 @@ Work Log:
 
 Stage Summary:
 - RESPALDO COMPLETO EN GITHUB: https://github.com/JorgeDSanchezB/bardoStudio — 19 commits, 259 archivos de código (fases 1-7, SFX, IA multi-proveedor, desktop, docs/ADRs, scripts), historial limpio sin instaladores ni datos runtime ni claves. Pendiente para el usuario: revocar el token compartido en el chat (https://github.com/settings/tokens).
+
+---
+Task ID: 19
+Agent: main (Z.ai Code)
+Task: «Cómo uso la versión Servidor local en Ajustes de IA con LM Studio» — investigación + mejora de la app para que LM Studio sirva de verdad (URL de transcripción aparte) + instalador 1.0.3.
+
+Work Log:
+- Investigación (web-search): LM Studio sirve /v1/chat/completions pero NO /v1/audio/transcriptions (petición abierta #1715; lmstudio.ai/transcribe = lista de espera). whisper.cpp `whisper-server` SÍ sirve /v1/audio/transcriptions en :8080 (OpenAI-compatible); vLLM/LocalAI también. Con una sola URL base por proveedor, LM Studio no podía ejecutar la Fase 2.
+- Diseño: ConfigOpenai.baseUrlAsr opcional — transcribirWav() usa baseUrlAsr ?? baseUrl; chat() usa baseUrl. Combina dos servicios locales: LM Studio (:1234, chat) + whisper.cpp (:8080, ASR), 100 % local y gratis.
+- ia.ts: ConfigOpenai/EstadoIa ampliados; crearOpenai calcula baseAsr; obtenerEstado expone baseUrlAsr.
+- /api/ia-proveedores: acepta baseUrlAsr (normalizada igual que baseUrl; 400 si es inválida); solo se considera con modeloAsr; PRUEBA REAL del ASR contra ESA URL antes de guardar; se guarda solo si hay modeloAsr.
+- UI (ajustes-ia-dialog): campo «URL de transcripción aparte (opcional)» con ayuda LM Studio/Whisper; preset «Servidor local» reescrito (nota LM Studio NO transcribe + puertos); carga desde estado; se limpia al aplicar preset; resumen «Activa: … · transcripción en …»; el POST incluye baseUrlAsr.
+- Mock nuevo mini-services/ia-mock-asr (puerto 3011, SOLO /v1/audio/transcriptions, texto DISTINTO para demostrar qué URL usa la app) + ia-mock (:3010) de chat.
+- Pruebas E2E reales: guardar dividido (3010/3011) → ok con baseUrlAsr en estado; /api/transcribe devuelve «prueba mock de transcripción ASR aparte» (= usó :3011); /api/analyze-tension motor «llm» (= usó :3010); URL de transcripción inalcanzable → 502 claro y NO guarda; inválida → 400; sin baseUrlAsr → regresión perfecta (transcribe «prueba mock de transcripción» vía :3010); DELETE limpia y borra .bardo-ia.json.
+- UI verificada con agent-browser: pestaña API propia, campo nuevo, preset Servidor local (nota correcta), guardado dividido con alerta de éxito y resumen «transcripción en :3011», Quitar limpia, 0 errores de consola; VLM confirma la captura. lint 0.
+- Docs: ADR-014 con sección «Actualización 1.0.3 · baseUrlAsr»; LEEME-INSTALACION (public+desktop) con «COMBINACIÓN 100 % LOCAL CON LM STUDIO + WHISPER» paso a paso.
+- Versión 1.0.3: desktop/package.json, href del botón y LEEME actualizados.
+- Empaquetado: dev server detenido (liberó memoria) → primer intento murió en silencio (proceso del sandbox) → relanzado con daemon doble-fork real (setsid) → 7/7 OK a la primera: smoke real OK, NSIS OK. public/BardoStudio-Setup-1.0.3.exe (158.257.709 bytes, 151 MB, SHA256 f6f4c22d4202f092718feb07154ca7ca44c0dbec1008e9de914da0d85ae77ba8). 1.0.2 ELIMINADO de public/. Dev server reanimado (GET / 200, HEAD instalador 200, enlace del botón → 1.0.3).
+
+Stage Summary:
+- RESPUESTA al usuario: LM Studio solo no transcribe (aún), pero desde la 1.0.3 Bardo combina LM Studio (chat/tensión, :1234) + whisper.cpp (transcripción, :8080) con «URL de transcripción aparte» — todo local, gratis y privado. Instrucciones paso a paso en LEEME-INSTALACION.txt y en la propia ayuda del diálogo. INSTALADOR 1.0.3 publicado y descargable.

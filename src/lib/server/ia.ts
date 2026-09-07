@@ -12,7 +12,9 @@ import path from "node:path";
  *                  escritorio ese archivo apunta al relé de la web.
  *   · "openai"   → API PROPIA compatible con OpenAI (OpenAI, Groq, Mistral,
  *                  servidores locales…): el usuario pone su URL base y su
- *                  clave en «Ajustes de IA».
+ *                  clave en «Ajustes de IA». baseUrlAsr opcional: URL distinta
+ *                  para transcripción — permite COMBINAR dos servicios locales
+ *                  (p. ej. chat con LM Studio en :1234 + Whisper.cpp en :8080).
  *   · "deepgram" → API propia de Deepgram (solo transcripción; la tensión
  *                  cae a la heurística local).
  *
@@ -44,7 +46,11 @@ export interface ProveedorIa {
 }
 
 export interface ConfigOpenai {
+  /** URL base para chat (y transcripción si no hay baseUrlAsr) */
   baseUrl: string;
+  /** URL base distinta para transcripción (opcional): p. ej. combinar
+   *  LM Studio (:1234, chat) con whisper.cpp (:8080, ASR). */
+  baseUrlAsr?: string;
   apiKey: string;
   modeloAsr?: string;
   modeloChat?: string;
@@ -70,6 +76,7 @@ export interface EstadoIa {
   zai: EstadoZai;
   openai: {
     baseUrl?: string;
+    baseUrlAsr?: string;
     modeloAsr?: string;
     modeloChat?: string;
     tieneClave: boolean;
@@ -184,6 +191,7 @@ export async function obtenerEstado(): Promise<EstadoIa> {
     openai: cfg.openai
       ? {
           baseUrl: cfg.openai.baseUrl,
+          baseUrlAsr: cfg.openai.baseUrlAsr,
           modeloAsr: cfg.openai.modeloAsr,
           modeloChat: cfg.openai.modeloChat,
           tieneClave: Boolean(cfg.openai.apiKey),
@@ -272,6 +280,8 @@ function crearZai(): ProveedorIa {
 
 export function crearOpenai(cfg: ConfigOpenai): ProveedorIa {
   const base = cfg.baseUrl.replace(/\/+$/, "");
+  // URL de transcripción: la específica si existe, si no la general
+  const baseAsr = (cfg.baseUrlAsr ?? cfg.baseUrl).replace(/\/+$/, "");
   return {
     id: "openai",
     nombre: "API propia",
@@ -291,7 +301,7 @@ export function crearOpenai(cfg: ConfigOpenai): ProveedorIa {
       );
       fd.append("model", cfg.modeloAsr);
       fd.append("response_format", "json");
-      const resp = await fetch(`${base}/audio/transcriptions`, {
+      const resp = await fetch(`${baseAsr}/audio/transcriptions`, {
         method: "POST",
         headers: { Authorization: `Bearer ${cfg.apiKey}` },
         body: fd,

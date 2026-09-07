@@ -110,7 +110,7 @@ const PREAJUSTES: Array<{
     id: "local",
     etiqueta: "Servidor local",
     baseUrl: "http://localhost:8080/v1",
-    nota: "Whisper.cpp, LM Studio, vLLM… corriendo en tu equipo: sin coste y sin salir a internet.",
+    nota: "LM Studio (chat, http://localhost:1234/v1), whisper.cpp (transcripción, :8080), vLLM… en tu equipo: sin coste y sin salir a internet. LM Studio NO transcribe: pon su URL arriba y la de Whisper en «URL de transcripción aparte».",
   },
   {
     id: "personalizada",
@@ -135,6 +135,8 @@ export function AjustesIaDialog({ open, onOpenChange }: Props) {
   // pestaña API propia
   const [preset, setPreset] = useState("openai");
   const [baseUrl, setBaseUrl] = useState("");
+  /** URL de transcripción aparte (opcional): chat y ASR en servicios distintos */
+  const [baseUrlAsr, setBaseUrlAsr] = useState("");
   const [clave, setClave] = useState("");
   const [verClave, setVerClave] = useState(false);
   const [modeloAsr, setModeloAsr] = useState("");
@@ -170,6 +172,7 @@ export function AjustesIaDialog({ open, onOpenChange }: Props) {
         );
         if (d.openai?.baseUrl) {
           setBaseUrl(d.openai.baseUrl);
+          setBaseUrlAsr(d.openai.baseUrlAsr ?? "");
           setModeloAsr(d.openai.modeloAsr ?? "");
           setModeloChat(d.openai.modeloChat ?? "");
           setPreset(
@@ -192,6 +195,7 @@ export function AjustesIaDialog({ open, onOpenChange }: Props) {
     const p = PREAJUSTES.find((x) => x.id === id);
     if (!p) return; // personalizada: no tocar los campos
     setBaseUrl(p.baseUrl);
+    setBaseUrlAsr("");
     setModeloAsr(p.modeloAsr ?? "");
     setModeloChat(p.modeloChat ?? "");
   }
@@ -561,6 +565,35 @@ export function AjustesIaDialog({ open, onOpenChange }: Props) {
                   spellCheck={false}
                   className="h-9 border-zinc-700 bg-zinc-900 font-mono text-xs text-zinc-200 placeholder:font-sans"
                 />
+                <p className="text-[11px] leading-relaxed text-zinc-600">
+                  Para chat (análisis de tensión) y, si no pones la de abajo,
+                  también para transcribir.
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="ia-baseurl-asr" className="text-xs text-zinc-500">
+                  URL de transcripción aparte{" "}
+                  <span className="text-zinc-600">(opcional)</span>
+                </Label>
+                <Input
+                  id="ia-baseurl-asr"
+                  value={baseUrlAsr}
+                  onChange={(e) => setBaseUrlAsr(e.target.value)}
+                  placeholder="http://localhost:8080/v1"
+                  disabled={probando !== null}
+                  inputMode="url"
+                  autoComplete="off"
+                  spellCheck={false}
+                  className="h-9 border-zinc-700 bg-zinc-900 font-mono text-xs text-zinc-200 placeholder:font-sans"
+                />
+                <p className="text-[11px] leading-relaxed text-zinc-600">
+                  Solo si transcribes con OTRO servicio: p. ej. chat con LM
+                  Studio en <span className="font-mono text-zinc-500">:1234</span> y
+                  Whisper local en{" "}
+                  <span className="font-mono text-zinc-500">:8080</span>. Déjala
+                  vacía si todo vive en la misma URL. La clave se usa en ambas.
+                </p>
               </div>
 
               <div className="space-y-1.5">
@@ -665,6 +698,7 @@ export function AjustesIaDialog({ open, onOpenChange }: Props) {
                       "openai",
                       {
                         baseUrl: baseUrl.trim(),
+                        baseUrlAsr: baseUrlAsr.trim(),
                         apiKey: clave.trim(),
                         modeloAsr: modeloAsr.trim(),
                         modeloChat: modeloChat.trim(),
@@ -701,6 +735,16 @@ export function AjustesIaDialog({ open, onOpenChange }: Props) {
                   <span className="font-mono text-zinc-400">
                     {estado.openai.baseUrl}
                   </span>
+                  {estado.openai.baseUrlAsr ? (
+                    <>
+                      {" · transcripción en "}
+                      <span className="font-mono text-zinc-400">
+                        {estado.openai.baseUrlAsr}
+                      </span>
+                    </>
+                  ) : (
+                    ""
+                  )}
                   {estado.openai.modeloAsr ? ` · ASR ${estado.openai.modeloAsr}` : ""}
                   {estado.openai.modeloChat
                     ? ` · chat ${estado.openai.modeloChat}`

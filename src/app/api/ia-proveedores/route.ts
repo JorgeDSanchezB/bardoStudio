@@ -134,6 +134,9 @@ interface CuerpoPost {
   proveedor?: unknown;
   url?: unknown;
   baseUrl?: unknown;
+  /** URL base DISTINTA para transcripción (opcional): combina dos
+   *  servicios locales, p. ej. chat con LM Studio (:1234) + Whisper.cpp (:8080). */
+  baseUrlAsr?: unknown;
   apiKey?: unknown;
   modeloAsr?: unknown;
   modeloChat?: unknown;
@@ -216,6 +219,22 @@ export async function POST(req: NextRequest) {
           400
         );
       }
+      // URL de transcripción aparte (opcional): solo tiene sentido con modelo de ASR
+      let baseUrlAsr: string | undefined;
+      if (modeloAsr && typeof cuerpo.baseUrlAsr === "string" && cuerpo.baseUrlAsr.trim()) {
+        baseUrlAsr = normalizarBaseUrl(cuerpo.baseUrlAsr);
+        if (!baseUrlAsr) {
+          return sinAlmacen(
+            {
+              ok: false,
+              error:
+                "La URL de transcripción no es válida (ej.: http://localhost:8080/v1).",
+            },
+            400
+          );
+        }
+      }
+      const baseAsr = baseUrlAsr ?? baseUrl;
 
       // PRUEBAS REALES antes de guardar
       const auth = { Authorization: `Bearer ${apiKey}` };
@@ -229,7 +248,7 @@ export async function POST(req: NextRequest) {
           );
           fd.append("model", modeloAsr);
           fd.append("response_format", "json");
-          const resp = await fetchPrueba(`${baseUrl}/audio/transcriptions`, {
+          const resp = await fetchPrueba(`${baseAsr}/audio/transcriptions`, {
             method: "POST",
             headers: auth,
             body: fd,
@@ -279,7 +298,13 @@ export async function POST(req: NextRequest) {
 
       await escribirBardoIa({
         activo: "openai",
-        openai: { baseUrl, apiKey, modeloAsr, modeloChat },
+        openai: {
+          baseUrl,
+          apiKey,
+          modeloAsr,
+          modeloChat,
+          baseUrlAsr: modeloAsr ? baseUrlAsr : undefined,
+        },
       });
       return sinAlmacen({ ok: true, estado: await obtenerEstado() });
     }

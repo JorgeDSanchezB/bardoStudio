@@ -1,6 +1,6 @@
 # ADR-014 · IA reemplazable: proveedores múltiples para la Fase 2
 
-**Estado**: aceptado · **Fecha**: 2026-09-07 · **Versión**: 1.0.2
+**Estado**: aceptado · **Fecha**: 2026-09-07 · **Versión**: 1.0.2 (actualizada en 1.0.3)
 
 ## Contexto
 
@@ -58,3 +58,25 @@ distintas IA**.
   complejidad de tres formularios en la UI.
 - Verificación E2E: mock OpenAI-compatible local (mini-services/ia-mock)
   — guardar/probar → transcribir → analizar → quitar, más zai real.
+
+## Actualización 1.0.3 · URL de transcripción aparte (`baseUrlAsr`)
+
+**Motivo**: LM Studio sirve `/v1/chat/completions` (chat) pero NO
+`/v1/audio/transcriptions` (ASR) — su transcripción sigue siendo una
+petición abierta. Con una sola URL base, un usuario de LM Studio no podía
+ejecutar la Fase 2 aunque el chat funcionara.
+
+**Decisión**: `ConfigOpenai.baseUrlAsr` (opcional). `transcribirWav()`
+usa `baseUrlAsr ?? baseUrl`; `chat()` sigue usando `baseUrl`. La UI añade
+«URL de transcripción aparte (opcional)» y el preset «Servidor local»
+documenta la combinación: **chat con LM Studio (:1234) + transcripción
+con whisper.cpp `whisper-server` (:8080)**, 100 % local.
+
+- Solo se guarda si hay `modeloAsr`; se prueba de verdad contra ESA URL
+  antes de escribir (igual que el resto). Clave compartida por ambas.
+- Sin `baseUrlAsr` el comportamiento de 1.0.2 es idéntico (regresión
+  cubierta).
+- Verificación E2E: dos mocks (ia-mock :3010 con chat, ia-mock-asr :3011
+  SOLO con /v1/audio/transcriptions y texto DISTINTO) — la transcripción
+  devuelta demuestra qué URL usó la app; guardado inalcanzable/inválido
+  rechazado sin escribir; flujo completo vía UI con agent-browser.

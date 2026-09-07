@@ -1070,7 +1070,7 @@ export default function Page() {
             </Badge>
             {/* instalador de escritorio para Windows (sirve public/BardoStudio-Setup-*.exe) */}
             <a
-              href="/BardoStudio-Setup-1.0.2.exe"
+              href="/BardoStudio-Setup-1.0.3.exe"
               download
               className="inline-flex h-8 items-center gap-1.5 rounded-md border border-amber-800/60 px-2 text-[11px] font-medium text-amber-300 transition-colors hover:bg-amber-500/10 hover:text-amber-200"
               title="Descarga el instalador de escritorio para Windows (NSIS, ~150 MB) — funciona sin conexión una vez instalado; ver LEEME-INSTALACION.txt"

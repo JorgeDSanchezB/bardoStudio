@@ -7,7 +7,7 @@ REQUISITOS
   · No necesitas Node, Bun ni Python: todo va incluido.
 
 INSTALACIÓN
-  1. Ejecuta BardoStudio-Setup-1.0.2.exe.
+  1. Ejecuta BardoStudio-Setup-1.0.3.exe.
   2. Si aparece "Windows protegió tu equipo" (SmartScreen, porque el
      instalador no está firmado): "Más información" → "Ejecutar de todas
      formas".
@@ -40,6 +40,32 @@ LA IA DE LA FASE 2 ES REEMPLAZABLE (elige una opción)
        «Guardar y probar». La app hace una prueba REAL antes de guardar.
     · Puedes poner solo el modelo de transcripción, solo el de chat
       (tensión) o ambos. Sin modelo de chat, la tensión se calcula con la
+      heurística local.
+
+    COMBINACIÓN 100 % LOCAL CON LM STUDIO + WHISPER (sin coste, sin
+    salir a internet) — nueva en 1.0.3:
+    · LM Studio NO transcribe (aún no tiene el endpoint de transcripción),
+      PERO sí hace el análisis de tensión (chat). Whisper.cpp hace la
+      transcripción. La app 1.0.3 permite usar DOS URLs: una para chat y
+      otra para transcripción.
+    · Pasos:
+      1) LM Studio: pestaña «Developer» → activa el servidor local
+         (puerto 1234) y carga un modelo de chat (p. ej. llama-3.1-8b o
+         qwen2.5-7b). En «API Keys» puedes dejar cualquier clave o crear
+         una; la que pongas la escribes también en Bardo (mínimo 8
+         caracteres; si LM Studio no pide clave, escribe p. ej.
+         «lm-studio-local»).
+      2) Whisper.cpp: descarga whisper.cpp y un modelo GGUF (p. ej.
+         whisper-large-v3-turbo o ggml-base.bin) y lanza su servidor:
+         whisper-server -m ggml-base.bin --port 8080
+         (sirve /v1/audio/transcriptions, el formato de OpenAI).
+      3) En Bardo: «API propia» → URL base http://localhost:1234/v1 →
+         «URL de transcripción aparte» http://localhost:8080/v1 →
+         modelo de chat: el nombre exacto que muestra LM Studio →
+         modelo de transcripción: ggml-base.bin (o el que cargues) →
+         clave → «Guardar y probar».
+    · Solo whisper.cpp (sin LM Studio): pon http://localhost:8080/v1 en
+      la URL base y deja la de transcripción vacía; la tensión usará la
       heurística local.
 
   OPCIÓN B · DEEPGRAM (solo transcripción)
