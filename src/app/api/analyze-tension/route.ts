@@ -13,6 +13,9 @@ import { obtenerProveedor } from "@/lib/server/ia";
  * Respaldo «modo seguro»: si el LLM falla (o el proveedor solo transcribe,
  * p. ej. Deepgram) → heurística local con los léxicos editables de
  * config.json (marcada con fuente="heuristico" en la UI).
+ *
+ * Motor 100 % local (Fase 2 gratis): con { motor: "local" } en el cuerpo NO
+ * se llama a ningún LLM — solo la heurística local (sin coste, sin claves).
  */
 
 export const runtime = "nodejs";
@@ -60,13 +63,21 @@ function quitarAcentos(s: string): string {
     .toLowerCase();
 }
 
+/** Raíz ligera en español: «espadas»→«espada», «goblins»→«goblin».
+ *  Así el léxico de config.json coincide con plurales sin duplicar entradas. */
+function raizLigera(s: string): string {
+  if (s.length > 4 && s.endsWith("es")) return s.slice(0, -2);
+  if (s.length > 3 && s.endsWith("s")) return s.slice(0, -1);
+  return s;
+}
+
 /** Heurística local: densidad de palabras clave por ánimo (config.json). */
 function puntuarHeuristica(
   texto: string,
   lexicos: Record<string, string[]>
 ): { tension: number; animo: Animo } {
   const norm = quitarAcentos(texto);
-  const tokens = norm.match(/[a-z0-9ñ']+/g) ?? [];
+  const tokens = (norm.match(/[a-z0-9ñ']+/g) ?? []).map(raizLigera);
   const n = Math.max(6, tokens.length);
 
   const dens: Record<string, number> = {};
@@ -77,9 +88,11 @@ function puntuarHeuristica(
       const pn = quitarAcentos(String(p));
       if (!pn) continue;
       if (pn.includes(" ")) {
+        // frase hecha: se busca literal (sin raíces) sobre el texto normalizado
         hits += norm.split(pn).length - 1;
       } else {
-        for (const t of tokens) if (t === pn) hits++;
+        const pr = raizLigera(pn);
+        for (const t of tokens) if (t === pr) hits++;
       }
     }
     dens[animo] = hits / n;
@@ -133,7 +146,11 @@ const SISTEMA = [
 
 export async function POST(req: NextRequest) {
   try {
-    const cuerpo = (await req.json()) as { escenas?: EscenaEntrada[] };
+    const cuerpo = (await req.json()) as {
+      escenas?: EscenaEntrada[];
+      /** "local" → SOLO heurística local (Fase 2 100 % gratis, sin LLM) */
+      motor?: unknown;
+    };
     const escenas = Array.isArray(cuerpo.escenas)
       ? cuerpo.escenas.filter(
           (e) => e && typeof e.id === "string" && typeof e.texto === "string"
@@ -145,6 +162,7 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+    const motorLocal = cuerpo.motor === "local";
 
     const cfg = await leerConfigFase2();
     const pesoTexto = clamp(Number(cfg.emocion?.pesosTexto ?? 0.7), 0, 1);
@@ -162,6 +180,10 @@ export async function POST(req: NextRequest) {
     let aviso: string | undefined;
 
     try {
+      if (motorLocal) {
+        // Fase 2 100 % local: SIN LLM ni proveedor — heurística pura
+        motor = "heuristico";
+      } else {
       const proveedor = await obtenerProveedor();
       if (!proveedor) {
         motor = "heuristico";
@@ -191,6 +213,7 @@ export async function POST(req: NextRequest) {
           aviso = "El LLM no devolvió JSON válido; se usó la heurística local.";
           motor = "heuristico";
         }
+      }
       }
     } catch {
       motor = "heuristico";

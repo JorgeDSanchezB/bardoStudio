@@ -7,7 +7,7 @@ REQUISITOS
   · No necesitas Node, Bun ni Python: todo va incluido.
 
 INSTALACIÓN
-  1. Ejecuta BardoStudio-Setup-1.0.4.exe.
+  1. Ejecuta BardoStudio-Setup-1.0.5.exe.
   2. Si aparece "Windows protegió tu equipo" (SmartScreen, porque el
      instalador no está firmado): "Más información" → "Ejecutar de todas
      formas".
@@ -23,15 +23,39 @@ PRIMEROS PASOS EN LA APP
   2. Para tus propios audiolibros: arrastra o selecciona tu WAV/MP3 de
      narración (mejor de 3 horas o menos por proyecto).
 
-LA IA DE LA FASE 2 ES REEMPLAZABLE (elige una opción)
-  La Fase 2 (transcripción + curva de tensión) necesita un servicio de IA.
-  La app NO depende de uno solo: elige el que quieras en «Ajustes de IA»
-  (engranaje, arriba a la derecha). Todo lo demás (silencios, música,
-  efectos, mezcla, editor, exportación, informes) funciona 100 % en tu
-  equipo sin IA.
+LA FASE 2 TIENE DOS MOTORES (nueva en 1.0.5)
+  La Fase 2 (transcripción + curva de tensión) se puede ejecutar de dos
+  formas, y se elige en la propia tarjeta «Iniciar transcripción», sin
+  entrar en menús:
 
-  OPCIÓN A · TU PROPIA API (recomendada: la app habla DIRECTAMENTE con el
-  servicio que TÚ elijas, sin depender de nadie más)
+  MODO 1 · 100 % GRATIS — MOTOR LOCAL (sin claves, sin cuentas, sin coste)
+    · Whisper corre DENTRO de la app (en tu navegador/equipo): el audio
+      NUNCA sale de tu ordenador. La tensión se puntúa con la heurística
+      local incluida.
+    · Cero claves, cero límites, cero facturas: la opción «100 % local ·
+      gratis» está a un clic. Si no tienes ninguna IA conectada, este
+      modo se activa solo.
+    · Calidades a elegir: Rápido (~42 MB), Equilibrado (~80 MB,
+      recomendado) o Detallado (~250 MB). La PRIMERA vez que uses cada
+      calidad se descarga de internet (modelos públicos de HuggingFace)
+      y queda GUARDADA en tu equipo: las siguientes veces funciona hasta
+      sin conexión.
+    · Velocidad: con WebGPU (Edge/Chrome modernos con tarjeta gráfica)
+      es rápido; si no, usa la CPU (algo más lento: para narraciones
+      largas elige «Rápido» o «Equilibrado»).
+    · Nota honesta: la calidad de transcripción de estos modelos locales
+      es algo menor que la de los grandes servicios de IA en la nube; la
+      curva de tensión sale del análisis local de palabras clave
+      (editable en config.json).
+
+  MODO 2 · IA CONECTADA (la clásica: Z.AI / tu API / Deepgram)
+    La app NO depende de un solo servicio: se configura en «Ajustes de
+    IA» (engranaje, arriba a la derecha). Todo lo demás (silencios,
+    música, efectos, mezcla, editor, exportación, informes) funciona
+    100 % en tu equipo sin IA.
+
+  OPCIÓN A · TU PROPIA API (la app habla DIRECTAMENTE con el servicio
+  que TÚ elijas, sin depender de nadie más)
     1. Consigue una clave de API de OpenAI, Google Gemini (gratuita en
        aistudio.google.com), DeepSeek, Groq (con capa gratuita), Mistral u
        otro servicio compatible con el formato de OpenAI. También sirve un
@@ -45,10 +69,10 @@ LA IA DE LA FASE 2 ES REEMPLAZABLE (elige una opción)
     · Google Gemini y DeepSeek solo hacen el ANÁLISIS DE TENSIÓN (chat),
       no transcriben: deja vacío el modelo de transcripción, o combínalos
       con un Whisper local en la «URL de transcripción aparte» (sección
-      siguiente; presets directos nueva en 1.0.4).
+      siguiente; presets directos desde 1.0.4).
 
     COMBINACIÓN 100 % LOCAL CON LM STUDIO + WHISPER (sin coste, sin
-    salir a internet) — nueva en 1.0.3:
+    salir a internet) — desde 1.0.3:
     · LM Studio NO transcribe (aún no tiene el endpoint de transcripción),
       PERO sí hace el análisis de tensión (chat). Whisper.cpp hace la
       transcripción. La app permite usar DOS URLs: una para chat y
@@ -72,6 +96,9 @@ LA IA DE LA FASE 2 ES REEMPLAZABLE (elige una opción)
     · Solo whisper.cpp (sin LM Studio): pon http://localhost:8080/v1 en
       la URL base y deja la de transcripción vacía; la tensión usará la
       heurística local.
+    · ¿Cuándo elegir esto en vez del MODO 1? Si ya usas LM Studio o
+      quieres control fino de modelos/servidores. Si no, el MODO 1 es
+      más simple (cero configuración).
 
   OPCIÓN B · DEEPGRAM (solo transcripción)
     1. Clave en deepgram.com → API Keys.
@@ -97,6 +124,8 @@ LA IA DE LA FASE 2 ES REEMPLAZABLE (elige una opción)
   AVISOS HONESTOS
   · Con las opciones A/B tu clave viaja ÚNICAMENTE de tu equipo al
     servicio de IA que hayas elegido (https de su API).
+  · Con el MODO 1 (motor local) el audio no sale de tu equipo; solo la
+    primera descarga del modelo usa internet.
   · Si el análisis de tensión no llega al LLM, la app continúa con su
     heurística local (se marca como «heurístico»).
 
@@ -136,8 +165,14 @@ ACTUALIZAR / DESINSTALAR
     quedan en %APPDATA%\Bardo Studio (bórralos a mano si quieres).
 
 PROBLEMAS
-  · «La IA de transcripción no está conectada»: abre «Ajustes IA» y
-    elige un proveedor (sección anterior).
+  · «La IA de transcripción no está conectada»: pulsa «Usar el motor
+    local (gratis)» en el propio aviso (cero configuración), o abre
+    «Ajustes IA» y conecta un proveedor.
+  · Motor local lento: usa la calidad «Rápido» o «Equilibrado»; sin
+    WebGPU el equipo usará la CPU.
+  · «No se pudo cargar el modelo local»: la primera descarga necesita
+    internet (jsdelivr + HuggingFace); al terminar queda cacheada y
+    funcionará sin conexión.
   · «La prueba falló»: revisa la URL, la clave y los modelos del
     proveedor; los mensajes indican el código de error del servicio.
   · La ventana no abre / error del servidor: mira bardo-servidor.log.

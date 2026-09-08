@@ -29,11 +29,11 @@
       "pesosAudio": 0.3
     },
     "lexicos": {
-      "tension": ["peligro", "cuidado", "corre", "huid", "rápido", "trampa", "amenaza", "terror", "miedo", "pánico", "acecha", "grito", "sangre", "muerte", "escapa", "ayuda", "inminente", "respiración", "susurra", "pasos", "contienen"],
-      "batalla": ["espada", "golpe", "enemigo", "ataca", "lucha", "guerra", "combate", "matar", "flecha", "escudo", "clava", "furia", "rugido", "impacto", "choca", "embestida", "acero", "hacha", "daga", "chispas", "llamarada", "astillas", "goblins", "irrumpen", "rugiendo"],
-      "victoria": ["victoria", "triunfo", "ganado", "vencido", "logrado", "éxito", "celebra", "júbilo", "aplausos", "salvado", "libre", "por fin", "honor", "gloria", "héroe", "recompensa", "sonríen", "canciones"],
-      "misterio": ["misterio", "sombra", "susurro", "secreto", "extraño", "oscuro", "enigma", "silencio", "desaparece", "invisible", "puerta", "antiguo", "runas", "profecía", "presencia", "niebla", "pergamino", "parpadea", "sombras", "desconocido"],
-      "calma": ["descanso", "tranquilo", "paz", "sueño", "suave", "lento", "cena", "fuego", "crepitar", "hogar", "amigo", "risa", "cálido", "noche", "estrellas", "posada", "historias", "copas", "nieve", "sonríen", "canciones", "vino", "descansa"]
+      "tension": ["peligro", "cuidado", "corre", "huid", "rápido", "trampa", "amenaza", "terror", "miedo", "pánico", "acecha", "grito", "sangre", "muerte", "escapa", "ayuda", "inminente", "respiración", "susurra", "pasos", "contienen", "alerta", "rugido", "explosión", "trueno", "derrumbe", "temblor", "caos", "desesperación", "herido", "cae", "última", "jamás", "nunca", "antes de que", "demasiado tarde"],
+      "batalla": ["espada", "golpe", "enemigo", "ataca", "lucha", "guerra", "combate", "matar", "flecha", "escudo", "clava", "furia", "rugido", "impacto", "choca", "embestida", "acero", "hacha", "daga", "chispas", "llamarada", "astillas", "goblins", "irrumpen", "rugiendo", "dragón", "bestia", "monstruo", "orco", "troll", "gigante", "garra", "colmillo", "mordisco", "lanza", "arco", "hechizo", "conjuro", "maldición", "tormenta", "veneno", "caverna", "atacad", "defended", "armadura", "cuerno", "carga"],
+      "victoria": ["victoria", "triunfo", "ganado", "vencido", "logrado", "éxito", "celebra", "júbilo", "aplausos", "salvado", "libre", "por fin", "honor", "gloria", "héroe", "recompensa", "sonríen", "canciones", "derrotado", "viva", "hazaña", "legendario", "eterno", "celebran", "abrazan", "lágrimas de alegría"],
+      "misterio": ["misterio", "sombra", "susurro", "secreto", "extraño", "oscuro", "enigma", "silencio", "desaparece", "invisible", "puerta", "antiguo", "runas", "profecía", "presencia", "niebla", "pergamino", "parpadea", "sombras", "desconocido", "cripta", "tumba", "espectro", "fantasma", "aullido", "luna", "umbral", "eco", "vestigio", "relicario", "vaticinio", "no debería estar aquí", "alguien"],
+      "calma": ["descanso", "tranquilo", "paz", "sueño", "suave", "lento", "cena", "fuego", "crepitar", "hogar", "amigo", "risa", "cálido", "noche", "estrellas", "posada", "historias", "copas", "nieve", "sonríen", "canciones", "vino", "descansa", "calma", "amanecer", "brisa", "aroma", "sereno", "bosque", "río", "pan", "camino", "aldea", "casa", "cantaba", "recuerdos", "mañana", "luz", "dormir"]
     }
   },
   "fase3": {

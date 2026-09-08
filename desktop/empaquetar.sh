@@ -79,6 +79,7 @@ find "$RECURSOS/scripts" -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/nu
 [ -f "$RECURSOS/public/demo/narracion-voz-demo.wav" ]          || die "falta la demo de voz"
 [ -f "$RECURSOS/config/musica.json" ]                          || die "falta config/musica.json"
 [ -f "$RECURSOS/scripts/report-pdf.py" ]                       || die "falta report-pdf.py"
+[ -f "$RECURSOS/public/workers/asr-local.js" ]                 || die "falta el worker del motor local ASR"
 [ -d "$RECURSOS/public/sfx" ]                                  || die "falta la biblioteca de SFX"
 # nada de binarios linux innecesarios
 rm -rf "$RECURSOS/node_modules/sharp" "$RECURSOS/node_modules/@img" 2>/dev/null || true

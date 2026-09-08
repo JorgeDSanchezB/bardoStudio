@@ -20,6 +20,8 @@ import {
   FileUp,
   HardDriveDownload,
   Settings2,
+  Cpu,
+  Cloud,
 } from "lucide-react";
 import { useProjectStore, snapshotProyecto, type FileMeta } from "@/store/project";
 import { analyzeAudio } from "@/lib/audio/analyze";
@@ -47,8 +49,21 @@ import { Fase5Seccion } from "@/components/bardo/fase5-seccion";
 import { Fase6Seccion } from "@/components/bardo/fase6-seccion";
 import { obtenerControlMotor } from "@/lib/fase5/registro-motor";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ejecutarFase2 } from "@/lib/fase2/pipeline";
+import { ejecutarFase2, type MotorFase2 } from "@/lib/fase2/pipeline";
 import { FASE2_CONFIG_DEFECTO } from "@/lib/fase2/types";
+import {
+  MODELOS_LOCALES,
+  MODELO_LOCAL_DEFECTO,
+  esIdModeloLocal,
+  type IdModeloLocal,
+} from "@/lib/fase2/asr-local";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { GuardarDialog } from "@/components/bardo/guardar-dialog";
 import { ProyectosDialog } from "@/components/bardo/proyectos-dialog";
 import { AjustesIaDialog } from "@/components/bardo/ajustes-ia-dialog";
@@ -111,6 +126,11 @@ export default function Page() {
   // estado de la conexión IA para el aviso de la cabecera ("sin conectar"
   // solo ocurre en la app de escritorio sin relé configurado)
   const [iaSinConectar, setIaSinConectar] = useState(false);
+  // nombre corto del proveedor activo (para la tarjeta del motor)
+  const [nombreIa, setNombreIa] = useState("");
+  // motor de la Fase 2: IA conectada ("servidor") o 100 % local y gratis
+  const [motorFase2, setMotorFase2] = useState<MotorFase2>("servidor");
+  const [modeloLocal, setModeloLocal] = useState<IdModeloLocal>(MODELO_LOCAL_DEFECTO);
   const [guardando, setGuardando] = useState(false);
   const [errorGuardar, setErrorGuardar] = useState<string | null>(null);
   const [descargando, setDescargando] = useState(false);
@@ -130,10 +150,63 @@ export default function Page() {
   // la web tiene Z.AI del servidor; la IA es reemplazable (ADR-014) y solo
   // queda "sin conectar" si no hay ningún proveedor configurado
   useEffect(() => {
+    const NOMBRES: Record<string, string> = {
+      zai: "Z.AI incluida",
+      openai: "API propia",
+      deepgram: "Deepgram",
+    };
     fetch("/api/ia-proveedores", { cache: "no-store" })
-      .then((r) => r.json() as Promise<{ activo?: string }>)
-      .then((d) => setIaSinConectar(d?.activo === "ninguno"))
+      .then(
+        (r) =>
+          r.json() as Promise<{
+            activo?: string;
+          }>
+      )
+      .then((d) => {
+        const activo = d?.activo ?? "ninguno";
+        setIaSinConectar(activo === "ninguno");
+        setNombreIa(NOMBRES[activo] ?? "");
+        // motor por defecto: lo que eligió el usuario la última vez; si no,
+        // la IA conectada si la hay y, si no, el motor LOCAL (gratis)
+        let inicial: MotorFase2 = activo === "ninguno" ? "local" : "servidor";
+        try {
+          const guardado = localStorage.getItem("bardo.motor-fase2");
+          if (guardado === "local" || guardado === "servidor") {
+            inicial = guardado;
+          }
+        } catch {
+          /* sin localStorage */
+        }
+        setMotorFase2(inicial);
+      })
       .catch(() => setIaSinConectar(false));
+  }, []);
+
+  useEffect(() => {
+    try {
+      const guardado = localStorage.getItem("bardo.modelo-local");
+      if (esIdModeloLocal(guardado)) setModeloLocal(guardado);
+    } catch {
+      /* sin localStorage */
+    }
+  }, []);
+
+  const elegirMotorFase2 = useCallback((motor: MotorFase2) => {
+    setMotorFase2(motor);
+    try {
+      localStorage.setItem("bardo.motor-fase2", motor);
+    } catch {
+      /* sin localStorage */
+    }
+  }, []);
+
+  const elegirModeloLocal = useCallback((id: IdModeloLocal) => {
+    setModeloLocal(id);
+    try {
+      localStorage.setItem("bardo.modelo-local", id);
+    } catch {
+      /* sin localStorage */
+    }
   }, []);
 
   // ---------- restauración tras recargar ----------
@@ -834,7 +907,7 @@ export default function Page() {
   );
 
   const runFase2 = useCallback(
-    async (rehacer: boolean) => {
+    async (rehacer: boolean, motorForzado?: MotorFase2) => {
       const st = useProjectStore.getState();
       const a = st.analysis;
       if (!a || a.envDb.length === 0 || !st.fileMeta) return;
@@ -866,6 +939,10 @@ export default function Page() {
             umbralDb: st.thresholds.dbThreshold,
             config,
             claveFuente: st.fileMeta.key,
+            // «motorForzado» permite cambiar de motor y relanzar en el mismo
+            // clic (el estado de React aún no reflejaría el cambio)
+            motor: motorForzado ?? motorFase2,
+            modeloLocal,
             previos: rehacer
               ? undefined
               : {
@@ -895,7 +972,7 @@ export default function Page() {
         }
       }
     },
-    [sourceUrl]
+    [sourceUrl, motorFase2, modeloLocal]
   );
 
   const rehacerFase2Confirm = useCallback(() => {
@@ -1070,7 +1147,7 @@ export default function Page() {
             </Badge>
             {/* instalador de escritorio para Windows (sirve public/BardoStudio-Setup-*.exe) */}
             <a
-              href="/BardoStudio-Setup-1.0.4.exe"
+              href="/BardoStudio-Setup-1.0.5.exe"
               download
               className="inline-flex h-8 items-center gap-1.5 rounded-md border border-amber-800/60 px-2 text-[11px] font-medium text-amber-300 transition-colors hover:bg-amber-500/10 hover:text-amber-200"
               title="Descarga el instalador de escritorio para Windows (NSIS, ~150 MB) — funciona sin conexión una vez instalado; ver LEEME-INSTALACION.txt"
@@ -1357,8 +1434,12 @@ export default function Page() {
                               por bloques ≤ 5 min
                             </strong>{" "}
                             cortados en los silencios que aprobaste; cada frase se
-                            alinea con la energía de voz y el motor de IA puntúa
-                            la{" "}
+                            alinea con la energía de voz y el motor elegido (IA
+                            conectada o{" "}
+                            <strong className="text-zinc-200">
+                              100&nbsp;% local y gratis
+                            </strong>
+                            ) puntúa la{" "}
                             <strong className="text-zinc-200">
                               tensión 0–100 y el ánimo
                             </strong>{" "}
@@ -1385,10 +1466,16 @@ export default function Page() {
                                   <span>
                                     Conecta el servicio una vez en «Ajustes de
                                     IA» (engranaje, arriba) y vuelve a lanzar la
-                                    Fase 2: el progreso por bloques ya guardado
-                                    se conserva y continuará donde se quedó.
+                                    Fase 2, o usa el{" "}
+                                    <strong className="text-amber-100">
+                                      motor 100&nbsp;% local y gratis
+                                    </strong>{" "}
+                                    (sin claves, sin coste y el audio no sale de
+                                    tu equipo). El progreso por bloques ya
+                                    guardado se conserva y continuará donde se
+                                    quedó.
                                   </span>
-                                  <span className="block">
+                                  <span className="flex flex-wrap gap-2">
                                     <Button
                                       size="sm"
                                       className="h-8 gap-1.5 bg-amber-500 text-xs font-semibold text-zinc-950 hover:bg-amber-400"
@@ -1400,6 +1487,23 @@ export default function Page() {
                                       />
                                       Conectar la IA…
                                     </Button>
+                                    {motorFase2 !== "local" && (
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="h-8 gap-1.5 border-emerald-700/70 bg-emerald-950/20 text-xs font-semibold text-emerald-300 hover:bg-emerald-950/40 hover:text-emerald-200"
+                                        onClick={() => {
+                                          elegirMotorFase2("local");
+                                          void runFase2(false, "local");
+                                        }}
+                                      >
+                                        <Cpu
+                                          className="h-3.5 w-3.5"
+                                          aria-hidden
+                                        />
+                                        Usar el motor local (gratis)
+                                      </Button>
+                                    )}
                                   </span>
                                 </AlertDescription>
                               </Alert>
@@ -1470,6 +1574,123 @@ export default function Page() {
                                 </p>
                               )}
 
+                              {/* ---- motor de la Fase 2 (ADR-015): IA conectada o 100 % local y gratis ---- */}
+                              <div className="space-y-2">
+                                <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
+                                  Motor de transcripción y análisis
+                                </p>
+                                <div
+                                  role="radiogroup"
+                                  aria-label="Motor de la Fase 2"
+                                  className="grid gap-2 sm:grid-cols-2"
+                                >
+                                  <button
+                                    type="button"
+                                    role="radio"
+                                    aria-checked={motorFase2 === "servidor"}
+                                    onClick={() => elegirMotorFase2("servidor")}
+                                    className={
+                                      "rounded-lg border p-3 text-start transition-colors " +
+                                      (motorFase2 === "servidor"
+                                        ? "border-amber-500/70 bg-amber-950/20"
+                                        : "border-zinc-800 bg-zinc-950/60 hover:border-zinc-700")
+                                    }
+                                  >
+                                    <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm font-semibold text-zinc-100">
+                                      <Cloud
+                                        className="h-4 w-4 shrink-0 text-amber-400"
+                                        aria-hidden
+                                      />
+                                      IA conectada
+                                      <span className="text-[10px] font-normal text-zinc-500">
+                                        {nombreIa || "proveedor de «Ajustes de IA»"}
+                                      </span>
+                                    </span>
+                                    <span className="mt-1 block text-[11px] leading-relaxed text-zinc-400">
+                                      Transcribe con el proveedor activo y puntúa
+                                      la tensión con su LLM. Depende de un
+                                      servicio externo (claves, límites y
+                                      posibles costes).
+                                    </span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    role="radio"
+                                    aria-checked={motorFase2 === "local"}
+                                    onClick={() => elegirMotorFase2("local")}
+                                    className={
+                                      "rounded-lg border p-3 text-start transition-colors " +
+                                      (motorFase2 === "local"
+                                        ? "border-emerald-600/70 bg-emerald-950/20"
+                                        : "border-zinc-800 bg-zinc-950/60 hover:border-zinc-700")
+                                    }
+                                  >
+                                    <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm font-semibold text-zinc-100">
+                                      <Cpu
+                                        className="h-4 w-4 shrink-0 text-emerald-400"
+                                        aria-hidden
+                                      />
+                                      100&nbsp;% local · gratis
+                                      <span className="text-[10px] font-normal text-emerald-400/80">
+                                        sin claves ni coste
+                                      </span>
+                                    </span>
+                                    <span className="mt-1 block text-[11px] leading-relaxed text-zinc-400">
+                                      Whisper dentro de tu navegador y análisis
+                                      local de tensión: el audio nunca sale de
+                                      tu equipo. La 1.ª vez se descarga el
+                                      modelo y queda cacheado.
+                                    </span>
+                                  </button>
+                                </div>
+
+                                {motorFase2 === "local" && (
+                                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border border-emerald-900/60 bg-emerald-950/10 p-3">
+                                    <label
+                                      htmlFor="modelo-local"
+                                      className="text-xs font-medium text-zinc-200"
+                                    >
+                                      Calidad del modelo
+                                    </label>
+                                    <Select
+                                      value={modeloLocal}
+                                      onValueChange={(v) => {
+                                        if (esIdModeloLocal(v))
+                                          elegirModeloLocal(v);
+                                      }}
+                                    >
+                                      <SelectTrigger
+                                        id="modelo-local"
+                                        className="h-8 w-44 text-xs"
+                                        aria-label="Modelo local de transcripción"
+                                      >
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {MODELOS_LOCALES.map((m) => (
+                                          <SelectItem
+                                            key={m.id}
+                                            value={m.id}
+                                            className="text-xs"
+                                          >
+                                            {m.etiqueta} · ~{m.tamanioMb} MB
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                    <span className="min-w-40 flex-1 text-[11px] leading-relaxed text-zinc-400">
+                                      {
+                                        MODELOS_LOCALES.find(
+                                          (m) => m.id === modeloLocal
+                                        )?.nota
+                                      }{" "}
+                                      Con WebGPU será rápido; si no, usará la
+                                      CPU del equipo.
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+
                               <div className="flex flex-wrap items-center gap-2">
                                 <Button
                                   className="bg-amber-500 font-semibold text-zinc-950 hover:bg-amber-400"
@@ -1494,12 +1715,9 @@ export default function Page() {
                               </div>
 
                               <p className="text-[11px] leading-relaxed text-zinc-500">
-                                Cada bloque se guarda al completarse: puedes
-                                cancelar o recargar y reanudar sin repetir
-                                llamadas. La transcripción viaja por sub-bloques
-                                ≤ 28 s al motor ASR del servicio; el análisis
-                                dramático combina el texto con la energía de voz
-                                (pesos editables en config.json).
+                                {motorFase2 === "local"
+                                  ? "Cada bloque se guarda al completarse: puedes cancelar o recargar y reanudar sin repetir trabajo. El motor local no hace llamadas a ningún servicio: sin claves, sin límites y sin coste; la primera vez necesita internet para descargar el modelo y después queda cacheado por el navegador."
+                                  : "Cada bloque se guarda al completarse: puedes cancelar o recargar y reanudar sin repetir llamadas. La transcripción viaja por sub-bloques ≤ 28 s al motor ASR del servicio; el análisis dramático combina el texto con la energía de voz (pesos editables en config.json)."}
                               </p>
                             </CardContent>
                           </Card>

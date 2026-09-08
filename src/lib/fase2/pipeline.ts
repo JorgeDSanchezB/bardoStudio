@@ -11,6 +11,12 @@ import { regionesDeVoz, alinearSubBloque } from "./align";
 import { construirEscenas, dbMedioVoz } from "./escenas";
 import { extraerPcm16k } from "./pcm";
 import { encodeWavMono16, blobABase64 } from "./wav-encode";
+import {
+  AsrLocal,
+  MODELO_LOCAL_DEFECTO,
+  MODELOS_LOCALES,
+  type IdModeloLocal,
+} from "./asr-local";
 import type { SilenceRegion } from "@/lib/audio/silence";
 
 /**
@@ -20,12 +26,19 @@ import type { SilenceRegion } from "@/lib/audio/silence";
  *     APROBADOS de la Fase 1 → progreso y persistencia reanudable.
  *  2. Cada bloque se subdivide en sub-bloques ASR ≤ asrMaxSeg (el servicio
  *     admite 0-30 s), también cortados en silencios.
- *  3. Cada sub-bloque: PCM 16 k mono → WAV → base64 → POST /api/transcribe.
+ *  3. Cada sub-bloque: PCM 16 k mono → según el MOTOR elegido:
+ *       · "servidor" → WAV → base64 → POST /api/transcribe (IA conectada);
+ *       · "local"    → Whisper EN EL NAVEGADOR (worker, gratis, sin claves
+ *                      ni límites; el audio nunca sale del equipo).
  *  4. El texto devuelto se alinea con las regiones de voz (energía Fase 1)
  *     → segmentos con tiempos estimados. Se persiste por bloque (reanudable).
  *  5. Escenas (rejilla escenaSegundos) + energía 0-100 → lotes a
  *     POST /api/analyze-tension (LLM + heurística + pesos de config.json).
+ *     Con motor "local" el análisis usa SOLO la heurística (sin IA).
  */
+
+/** motor de transcripción de la Fase 2 (ADR-014 + alternativa local gratis) */
+export type MotorFase2 = "servidor" | "local";
 
 const CANCELADO = "cancelado";
 const SR_ASR = 16000;
@@ -40,6 +53,10 @@ export interface Fase2Entrada {
   config: Fase2Config;
   claveFuente: string;
   previos?: { segmentos: Segmento[]; bloquesHechos: number[] };
+  /** "servidor" (defecto: IA conectada) o "local" (Whisper en el navegador) */
+  motor?: MotorFase2;
+  /** calidad del modelo local (solo con motor "local") */
+  modeloLocal?: IdModeloLocal;
 }
 
 export interface Fase2Manejadores {
@@ -99,7 +116,8 @@ interface ResultadoEmocion {
 }
 
 async function analizarLote(
-  escenas: Array<{ id: string; texto: string; energia: number }>
+  escenas: Array<{ id: string; texto: string; energia: number }>,
+  motorLocal: boolean
 ): Promise<{ motor: string; resultados: ResultadoEmocion[] } | null> {
   for (let intento = 0; intento < 2; intento++) {
     if (intento > 0) await dormir(1500);
@@ -107,7 +125,9 @@ async function analizarLote(
       const res = await fetch("/api/analyze-tension", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ escenas }),
+        body: JSON.stringify(
+          motorLocal ? { escenas, motor: "local" } : { escenas }
+        ),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = (await res.json()) as {
@@ -133,6 +153,7 @@ export async function ejecutarFase2(
   const cfg = ent.config;
   const tr = cfg.transcripcion;
   const avisos: Fase2Aviso[] = [];
+  const motorLocal = ent.motor === "local";
 
   // ---------- cortes lógicos (bloques ≤ 5 min ajustados a silencios) ----------
   const cortes = calcularCortes(
@@ -148,6 +169,46 @@ export async function ejecutarFase2(
   let idBase = segmentos.length;
   let solicitudes = 0;
 
+  // ---------- motor local: cargar Whisper en el navegador (gratis) ----------
+  let asrLocal: AsrLocal | null = null;
+  const defModelo =
+    MODELOS_LOCALES.find((m) => m.id === (ent.modeloLocal ?? MODELO_LOCAL_DEFECTO)) ??
+    MODELOS_LOCALES[1];
+  if (motorLocal) {
+    h.onProgreso({
+      etapa: "preparando",
+      bloque: 0,
+      totalBloques,
+      subInicio: 0,
+      subFin: 0,
+      frases: segmentos.length,
+      mensaje: "Preparando el motor local de transcripción (gratis)…",
+    });
+    asrLocal = new AsrLocal(defModelo.id, (d) => {
+      if (d.totalMb > 0) {
+        h.onProgreso({
+          etapa: "preparando",
+          bloque: 0,
+          totalBloques,
+          subInicio: 0,
+          subFin: 0,
+          frases: segmentos.length,
+          mensaje: `Descargando el modelo ${defModelo.etiqueta} (solo la primera vez): ${d.cargadoMb}/${d.totalMb} MB · ${d.progreso} %`,
+        });
+      }
+    });
+    try {
+      await asrLocal.preparar();
+    } catch (e) {
+      asrLocal.cerrar();
+      const msg = e instanceof Error ? e.message : String(e);
+      throw new Error(
+        `Motor local: ${msg}`
+      );
+    }
+  }
+
+  try {
   h.onProgreso({
     etapa: "preparando",
     bloque: 0,
@@ -198,12 +259,20 @@ export async function ejecutarFase2(
       );
       if (pcm.length < SR_ASR * 0.3) continue;
 
-      const texto = await llamarAsr(
-        encodeWavMono16(pcm, SR_ASR),
-        Math.max(0, tr.reintentos),
-        tr.pausaEntreSolicitudesMs
-      );
-      solicitudes++;
+      let texto: string;
+      if (motorLocal && asrLocal) {
+        // ---- Whisper en el navegador: gratis, sin claves ni límites ----
+        texto = (await asrLocal.transcribir(pcm)).trim();
+        solicitudes++;
+      } else {
+        // ---- IA conectada (proveedor del servidor) ----
+        texto = await llamarAsr(
+          encodeWavMono16(pcm, SR_ASR),
+          Math.max(0, tr.reintentos),
+          tr.pausaEntreSolicitudesMs
+        );
+        solicitudes++;
+      }
 
       if (texto) {
         nuevos.push(
@@ -212,8 +281,13 @@ export async function ejecutarFase2(
         idBase += nuevos.length;
       }
 
-      // respiro entre solicitudes (respeta el rate-limit del servicio)
-      await dormir(Math.max(300, tr.pausaEntreSolicitudesMs));
+      // respiro entre solicitudes SOLO para el motor de servidor
+      // (respeta el rate-limit del servicio; el local no lo necesita)
+      if (!motorLocal) {
+        await dormir(Math.max(300, tr.pausaEntreSolicitudesMs));
+      } else {
+        await dormir(30); // deja respirar la UI entre sub-bloques
+      }
     }
 
     // persistir el bloque → reanudable tras recarga/cancelación
@@ -252,7 +326,8 @@ export async function ejecutarFase2(
     if (h.cancel()) throw new Error(CANCELADO);
     const grupo = escenas.slice(i, i + lote);
     const respuesta = await analizarLote(
-      grupo.map((e) => ({ id: e.id, texto: e.texto.slice(0, 600), energia: e.energia }))
+      grupo.map((e) => ({ id: e.id, texto: e.texto.slice(0, 600), energia: e.energia })),
+      motorLocal
     );
     if (respuesta) {
       motorEmocion = respuesta.motor;
@@ -289,7 +364,9 @@ export async function ejecutarFase2(
 
   const caracteres = segmentos.reduce((s, x) => s + x.texto.length, 0);
   const resumen: Fase2Resumen = {
-    motorTranscripcion: `ASR por bloques ≤ ${Math.round(tr.asrMaxSeg)} s (reanudable)`,
+    motorTranscripcion: motorLocal
+      ? `Whisper ${defModelo.etiqueta} en el navegador (gratis, sin claves)`
+      : `ASR por bloques ≤ ${Math.round(tr.asrMaxSeg)} s (reanudable)`,
     motorEmocion,
     duracionSec: Math.round(ent.durationSec * 10) / 10,
     bloques: totalBloques,
@@ -310,4 +387,8 @@ export async function ejecutarFase2(
   });
 
   return { escenas, resumen, avisos };
+  } finally {
+    // liberar el modelo local de memoria (worker terminado)
+    asrLocal?.cerrar();
+  }
 }
