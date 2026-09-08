@@ -43,7 +43,7 @@ src/lib/server/             — archivos (Range 206), user-music (manifiesto JSO
 src/store/project.ts        — zustand + persist(localStorage) + IndexedDB (picos/envolvente);
                               aplicarProyecto, materializarFase5, validarBloque (clampea offsetOrigen)
 config/config.json          — Mapa de Atributos Dinámicos (pesos/umbrales editables)
-public/demo/                — narracion-voz-demo.wav (176.8 s, recomendada) y demo sintética
+public/demo/musica/         — catálogo de música de la Fase 3 (los WAVs demo de narración se retiraron)
 scripts/generate-demo-audio.ts — WAV demo determinista (regenerable byte a byte)
 db/                         — audio de proyectos + user-music (NUNCA re-codificar)
 ```

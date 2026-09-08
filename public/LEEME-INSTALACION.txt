@@ -18,10 +18,10 @@ INSTALACIÓN
      siguientes son inmediatos.
 
 PRIMEROS PASOS EN LA APP
-  1. Fase 1: pulsa «Demo con voz real (recomendada)» para probar el flujo
-     completo sin grabar nada.
-  2. Para tus propios audiolibros: arrastra o selecciona tu WAV/MP3 de
-     narración (mejor de 3 horas o menos por proyecto).
+  1. Arrastra o selecciona tu WAV/MP3 de narración (mejor de 3 horas o
+     menos por proyecto): la Fase 1 se analiza en tu propio equipo.
+  2. Aprueba cada fase (silencios, transcripción, música, efectos,
+     mezcla, editor) y exporta el audiolibro final.
 
 LA FASE 2 TIENE DOS MOTORES (nueva en 1.0.5)
   La Fase 2 (transcripción + curva de tensión) se puede ejecutar de dos

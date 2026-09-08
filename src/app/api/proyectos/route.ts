@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { readdir, readFile, writeFile, access, unlink } from "node:fs/promises";
+import { readdir, readFile, writeFile, access, unlink, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { esIdValido, idSeguro } from "@/lib/server/archivos";
 import type { ProyectoResumen } from "@/lib/proyecto/tipos";
@@ -197,6 +197,8 @@ export async function POST(req: Request) {
   };
 
   try {
+    // garantiza db/proyectos (primer arranque tras instalar o carpeta perdida)
+    await mkdir(DIR_PROYECTOS, { recursive: true });
     await writeFile(
       path.join(DIR_PROYECTOS, `${id}.json`),
       JSON.stringify(proyecto),

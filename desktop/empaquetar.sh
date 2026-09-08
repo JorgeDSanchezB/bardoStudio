@@ -76,7 +76,7 @@ cp -r "$ETAPA/scripts" "$RECURSOS/scripts"
 find "$RECURSOS/scripts" -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
 # comprobaciones de sanidad
 [ -f "$RECURSOS/server.js" ]                                   || die "falta server.js"
-[ -f "$RECURSOS/public/demo/narracion-voz-demo.wav" ]          || die "falta la demo de voz"
+[ -d "$RECURSOS/public/demo/musica" ]                          || die "falta el catálogo de música"
 [ -f "$RECURSOS/config/musica.json" ]                          || die "falta config/musica.json"
 [ -f "$RECURSOS/scripts/report-pdf.py" ]                       || die "falta report-pdf.py"
 [ -f "$RECURSOS/public/workers/asr-local.js" ]                 || die "falta el worker del motor local ASR"

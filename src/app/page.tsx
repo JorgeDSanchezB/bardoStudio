@@ -18,7 +18,6 @@ import {
   Save,
   FolderOpen,
   FileUp,
-  HardDriveDownload,
   Settings2,
   Cpu,
   Cloud,
@@ -87,7 +86,6 @@ const ACCEPT_AUDIO = ".wav,.mp3,.m4a,.ogg,.oga,.flac,.opus,.aac,.webm,audio/*";
 export default function Page() {
   const status = useProjectStore((s) => s.status);
   const fileMeta = useProjectStore((s) => s.fileMeta);
-  const sourceKind = useProjectStore((s) => s.sourceKind);
   const analysis = useProjectStore((s) => s.analysis);
   const progress = useProjectStore((s) => s.progress);
   const silences = useProjectStore((s) => s.silences);
@@ -111,8 +109,6 @@ export default function Page() {
   const [playing, setPlaying] = useState(false);
   const [sourceUrl, setSourceUrl] = useState<string | null>(null);
   const [sourceReady, setSourceReady] = useState(false);
-  const [demoLoading, setDemoLoading] = useState(false);
-  const [demoVozLoading, setDemoVozLoading] = useState(false);
   const [escenaSel, setEscenaSel] = useState<string | null>(null);
   const cancelFase2Ref = useRef(false);
   const [hydrated, setHydrated] = useState(false);
@@ -261,13 +257,7 @@ export default function Page() {
           });
           st.recomputeSilences();
         }
-        if (st.sourceKind === "demo") {
-          setSourceUrl(
-            st.fileMeta?.name === "narracion-voz-demo.wav"
-              ? "/demo/narracion-voz-demo.wav"
-              : "/demo/narration-demo.wav"
-          );
-        } else if (st.proyecto) {
+        if (st.proyecto) {
           // proyecto guardado: el audio original vive en el servidor local
           try {
             const res = await fetch(
@@ -435,10 +425,10 @@ export default function Page() {
 
   // ---------- ejecución del análisis por bloques ----------
   const runAnalysis = useCallback(
-    async (blob: Blob, meta: FileMeta, kind: "demo" | "user") => {
+    async (blob: Blob, meta: FileMeta) => {
       cancelRef.current = false;
       const st = useProjectStore.getState();
-      st.beginAnalysis(meta, kind);
+      st.beginAnalysis(meta, "user");
       const opts: AnalysisOptions = st.analysisOpts;
       try {
         const result = await analyzeAudio(blob, opts, {
@@ -460,17 +450,16 @@ export default function Page() {
     []
   );
 
-  const attachSource = (file: Blob, kind: "demo" | "user") => {
+  const attachSource = (file: Blob) => {
     if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
     const url = URL.createObjectURL(file);
     objectUrlRef.current = url;
     setSourceUrl(url);
-    void kind;
   };
 
   const handleFile = useCallback(
     (file: File) => {
-      attachSource(file, "user");
+      attachSource(file);
       const key = `${file.name}:${file.size}:${file.lastModified}`;
       void deleteAnalysis(key).catch(() => undefined);
       const meta: FileMeta = {
@@ -480,29 +469,10 @@ export default function Page() {
         lastModified: file.lastModified || Date.now(),
         key,
       };
-      void runAnalysis(file, meta, "user");
+      void runAnalysis(file, meta);
     },
     [runAnalysis]
   );
-
-  const loadDemo = useCallback(async () => {
-    setDemoLoading(true);
-    try {
-      const res = await fetch("/demo/narration-demo.wav");
-      const blob = await res.blob();
-      const file = new File([blob], "narracion-demo.wav", {
-        type: "audio/wav",
-      });
-      attachSource(file, "demo");
-      const key = "demo:narration-demo.wav:16140644:0";
-      void deleteAnalysis(key).catch(() => undefined);
-      await runAnalysis(file, { name: file.name, size: file.size, type: "audio/wav", lastModified: 0, key }, "demo");
-    } catch {
-      useProjectStore.getState().failAnalysis("No se pudo descargar la demo.");
-    } finally {
-      setDemoLoading(false);
-    }
-  }, [runAnalysis]);
 
   const resetAll = useCallback(() => {
     if (objectUrlRef.current) {
@@ -516,14 +486,10 @@ export default function Page() {
   }, []);
 
   const reanalyze = useCallback(() => {
-    if (sourceKind === "demo") {
-      void loadDemo();
-    } else {
-      // conservar el pipeline (y el proyecto guardado si lo hay):
-      // re-adjuntar el archivo original y re-analizar solo si hace falta
-      readjuntarRef.current?.click();
-    }
-  }, [sourceKind, loadDemo]);
+    // conservar el pipeline (y el proyecto guardado si lo hay):
+    // re-adjuntar el archivo original y re-analizar solo si hace falta
+    readjuntarRef.current?.click();
+  }, []);
 
   // ---------- proyectos guardados (estilo Camtasia) ----------
 
@@ -587,14 +553,6 @@ export default function Page() {
     return true;
   }, []);
 
-  const demoUrlDe = useCallback(
-    (nombre?: string | null) =>
-      nombre === "narracion-voz-demo.wav"
-        ? "/demo/narracion-voz-demo.wav"
-        : "/demo/narration-demo.wav",
-    []
-  );
-
   /** abre un proyecto guardado en el servidor local. */
   const abrirProyectoServidor = useCallback(
     async (id: string) => {
@@ -642,10 +600,7 @@ export default function Page() {
         // ---- audio original ----
         const st = useProjectStore.getState();
         let audioOk = false;
-        if (st.sourceKind === "demo") {
-          setSourceUrl(demoUrlDe(st.fileMeta?.name));
-          audioOk = true;
-        } else if (data.tieneAudio) {
+        if (data.tieneAudio) {
           try {
             const resAu = await fetch(`/api/proyectos/${id}/audio`);
             if (resAu.ok) {
@@ -680,11 +635,7 @@ export default function Page() {
           st.status !== "empty"
         ) {
           const blob = await fetch(objectUrlRef.current).then((r) => r.blob());
-          void runAnalysis(
-            blob,
-            st.fileMeta,
-            st.sourceKind === "demo" ? "demo" : "user"
-          );
+          void runAnalysis(blob, st.fileMeta);
         }
         setDialogoProyectos(false);
       } catch (err) {
@@ -695,7 +646,7 @@ export default function Page() {
         );
       }
     },
-    [confirmarDescartar, aplicarPack, aplicarSaved, demoUrlDe, runAnalysis]
+    [confirmarDescartar, aplicarPack, aplicarSaved, runAnalysis]
   );
 
   /** importa un archivo .bsproj descargado antes. */
@@ -729,15 +680,9 @@ export default function Page() {
           }
         }
 
-        const st = useProjectStore.getState();
-        if (st.sourceKind === "demo") {
-          setSourceUrl(demoUrlDe(st.fileMeta?.name));
-          useProjectStore.getState().setSourceMissing(false);
-        } else {
-          // el .bsproj no lleva el audio: pedir re-adjuntar (como Camtasia)
-          setSourceUrl(null);
-          useProjectStore.getState().setSourceMissing(true);
-        }
+        // el .bsproj no lleva el audio: pedir re-adjuntar (como Camtasia)
+        setSourceUrl(null);
+        useProjectStore.getState().setSourceMissing(true);
         setDialogoProyectos(false);
       } catch (err) {
         window.alert(
@@ -747,7 +692,7 @@ export default function Page() {
         );
       }
     },
-    [confirmarDescartar, aplicarPack, aplicarSaved, demoUrlDe]
+    [confirmarDescartar, aplicarPack, aplicarSaved]
   );
 
   /** guarda el proyecto en el servidor local (audio + análisis incluidos). */
@@ -775,8 +720,8 @@ export default function Page() {
             musicaPropia,
           })
         );
-        // audio en memoria (las demos ya viven en el servidor)
-        if (st.sourceKind === "user" && objectUrlRef.current) {
+        // audio en memoria (el original cargado o re-adjuntado en sesión)
+        if (objectUrlRef.current) {
           const blob = await fetch(objectUrlRef.current)
             .then((r) => r.blob())
             .catch(() => null);
@@ -897,10 +842,10 @@ export default function Page() {
       ) {
         return;
       }
-      attachSource(file, "user");
+      attachSource(file);
       useProjectStore.getState().setSourceMissing(false);
       if (!st.analysis || st.analysis.envDb.length === 0) {
-        void runAnalysis(file, meta, "user");
+        void runAnalysis(file, meta);
       }
     },
     [runAnalysis]
@@ -914,7 +859,7 @@ export default function Page() {
       const url = objectUrlRef.current ?? sourceUrl;
       if (!url) {
         st.fallarFase2(
-          "No hay audio fuente disponible: vuelve a cargar el archivo (o la demo) para transcribir."
+          "No hay audio fuente disponible: vuelve a cargar el archivo original para transcribir."
         );
         return;
       }
@@ -986,31 +931,6 @@ export default function Page() {
       void runFase2(true);
     }
   }, [runFase2]);
-
-  const cargarDemoVoz = useCallback(async () => {
-    setDemoVozLoading(true);
-    try {
-      const res = await fetch("/demo/narracion-voz-demo.wav");
-      const blob = await res.blob();
-      const file = new File([blob], "narracion-voz-demo.wav", {
-        type: "audio/wav",
-      });
-      attachSource(file, "demo");
-      const key = `demo:narracion-voz-demo.wav:${blob.size}:0`;
-      void deleteAnalysis(key).catch(() => undefined);
-      await runAnalysis(
-        file,
-        { name: file.name, size: blob.size, type: "audio/wav", lastModified: 0, key },
-        "demo"
-      );
-    } catch {
-      useProjectStore
-        .getState()
-        .failAnalysis("No se pudo descargar la demo con voz.");
-    } finally {
-      setDemoVozLoading(false);
-    }
-  }, [runAnalysis]);
 
   // derivados de proyectos guardados
   const puedeGuardar =
@@ -1145,17 +1065,6 @@ export default function Page() {
             <Badge variant="outline" className="text-[10px] text-zinc-400">
               Fase {faseActiva} / 7
             </Badge>
-            {/* instalador de escritorio para Windows (sirve public/BardoStudio-Setup-*.exe) */}
-            <a
-              href="/BardoStudio-Setup-1.0.5.exe"
-              download
-              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-amber-800/60 px-2 text-[11px] font-medium text-amber-300 transition-colors hover:bg-amber-500/10 hover:text-amber-200"
-              title="Descarga el instalador de escritorio para Windows (NSIS, ~150 MB) — funciona sin conexión una vez instalado; ver LEEME-INSTALACION.txt"
-            >
-              <HardDriveDownload className="h-4 w-4" aria-hidden />
-              <span className="hidden lg:inline">Instalador Windows</span>
-              <span className="sr-only lg:hidden">Descargar el instalador para Windows</span>
-            </a>
             {/* ajustes de IA: proveedores reemplazables (Z.AI incluida / API
                 propia OpenAI-compatible / Deepgram) para la Fase 2 */}
             <Button
@@ -1238,13 +1147,7 @@ export default function Page() {
                   — la Fase 1 no sube nada a internet.
                 </p>
               </div>
-              <UploadPanel
-                onFile={handleFile}
-                onDemo={loadDemo}
-                demoLoading={demoLoading}
-                onDemoVoz={cargarDemoVoz}
-                demoVozLoading={demoVozLoading}
-              />
+              <UploadPanel onFile={handleFile} />
               <div className="flex flex-wrap items-center justify-center gap-2">
                 <Button
                   variant="ghost"
@@ -1299,7 +1202,7 @@ export default function Page() {
                   </Alert>
                 )}
 
-                {!analysis && <RestoreCard onReanalyze={reanalyze} isDemo={sourceKind === "demo"} />}
+                {!analysis && <RestoreCard onReanalyze={reanalyze} />}
 
                 {analysis && (
                   <>
@@ -1321,7 +1224,7 @@ export default function Page() {
                             Cargando el audio…
                           </p>
                         )}
-                        {sourceMissing && sourceKind === "user" && (
+                        {sourceMissing && (
                           <div className="mt-2 space-y-2 rounded-lg border border-amber-800/50 bg-amber-950/10 p-3">
                             <p className="flex items-center gap-1.5 text-xs font-semibold text-amber-200">
                               <FileUp className="h-3.5 w-3.5" aria-hidden />
@@ -1364,7 +1267,7 @@ export default function Page() {
                     </Card>
 
                     {/* umbrales + tabla */}
-                    <div className="grid gap-4 lg:grid-cols-[minmax(300px,380px)_1fr]">
+                    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(300px,380px)_1fr]">
                       <ThresholdPanel
                         thresholds={thresholds}
                         defaults={

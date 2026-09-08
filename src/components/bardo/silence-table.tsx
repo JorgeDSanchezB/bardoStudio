@@ -59,7 +59,7 @@ export function SilenceTable({ silences, onSeek, fileName }: SilenceTableProps) 
   };
 
   return (
-    <Card className="border-zinc-800 bg-zinc-950/60">
+    <Card className="min-w-0 border-zinc-800 bg-zinc-950/60">
       <CardHeader className="pb-3">
         <div className="flex items-center gap-2">
           <CardTitle className="text-base">
@@ -90,7 +90,7 @@ export function SilenceTable({ silences, onSeek, fileName }: SilenceTableProps) 
             dB o bajar la duración mínima.
           </p>
         ) : (
-          <div className="max-h-72 overflow-y-auto scroll-thin rounded-md border border-zinc-800/80">
+          <div className="max-h-72 overflow-x-auto overflow-y-auto scroll-thin rounded-md border border-zinc-800/80">
             <Table>
               <TableHeader className="sticky top-0 z-10 bg-zinc-900">
                 <TableRow className="hover:bg-transparent">

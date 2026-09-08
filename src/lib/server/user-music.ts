@@ -6,7 +6,7 @@
  *                                  usuario (nunca se re-codifican)
  */
 
-import { readFile, writeFile, access, unlink } from "node:fs/promises";
+import { readFile, writeFile, access, unlink, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { esAnimo, type Animo } from "@/lib/fase2/types";
 import {
@@ -66,6 +66,8 @@ export async function leerManifiesto(): Promise<ManifiestoMusica> {
 }
 
 export async function escribirManifiesto(m: ManifiestoMusica): Promise<void> {
+  // garantiza db/user-music (primer arranque tras instalar o carpeta perdida)
+  await mkdir(DIR, { recursive: true });
   await writeFile(
     RUTA_MANIFIESTO,
     JSON.stringify(m, null, 2),

@@ -39,7 +39,7 @@ export function ThresholdPanel(props: ThresholdPanelProps) {
   const pctVoice = Math.round(speechRatio * 100);
 
   return (
-    <Card className="border-zinc-800 bg-zinc-950/60">
+    <Card className="min-w-0 border-zinc-800 bg-zinc-950/60">
       <CardHeader className="pb-3">
         <CardTitle className="text-base">Umbral de silencios</CardTitle>
         <CardDescription>

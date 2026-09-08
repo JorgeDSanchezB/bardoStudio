@@ -27,7 +27,7 @@
 - `src/lib/server/` — servir archivos con Range 206 y manifiesto de música propia.
 - `src/store/project.ts` — zustand + persist (localStorage `bardo-project-v1`, IndexedDB `bardo-studio`).
 - `config/config.json` — pesos/umbrales editables en caliente.
-- `public/demo/` — WAVs demo (voz: `narracion-voz-demo.wav`, 176.8 s; sintética: 366 s).
+- `public/demo/` — catálogo de música de la Fase 3 (`musica/`). Los WAVs de demo de narración se retiraron (UI más limpia; regenerables con `scripts/generate-demo-voz.ts` si hicieran falta).
 - `db/` — audio de proyectos y `user-music/` (archivos originales del usuario; **nunca re-codificar ni borrar**).
 
 ## Reglas del proyecto

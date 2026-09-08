@@ -36,10 +36,8 @@ export function Phase2Teaser() {
 
 export function RestoreCard({
   onReanalyze,
-  isDemo,
 }: {
   onReanalyze: () => void;
-  isDemo: boolean;
 }) {
   return (
     <Card className="border-zinc-800 bg-zinc-950/60">
@@ -55,9 +53,7 @@ export function RestoreCard({
       <CardContent className="pb-4">
         <Button variant="secondary" size="sm" className="h-9" onClick={onReanalyze}>
           <FileAudio className="me-1 h-4 w-4" />
-          {isDemo
-            ? "Volver a descargar y analizar la demo"
-            : "Re-seleccionar el archivo y analizar"}
+          Re-seleccionar el archivo y analizar
         </Button>
       </CardContent>
     </Card>
