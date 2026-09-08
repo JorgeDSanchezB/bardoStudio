@@ -552,3 +552,26 @@ Work Log:
 Stage Summary:
 - La Fase 2 ahora tiene dos motores: «servidor» (IA conectada, como siempre) y «local» (Whisper EN EL NAVEGADOR vía transformers.js 3.8.1 en un Web Worker con fallback WebGPU→WASM, + heurística de tensión ampliada y editable). El motor local es gratis, sin claves ni cuentas ni límites, el audio no sale del equipo, y solo la primera descarga del modelo usa internet (después queda cacheada). Elegido desde la propia tarjeta de la Fase 2 y persistido; por defecto si no hay IA conectada.
 - CIERRE de la tarea 27 (misma sesión): instalador 1.0.5 re-empaquetado como daemon doble-fork con supervisor de 3 reintentos → 7/7 OK AL PRIMER INTENTO en ~2,5 min (smoke real superado: primer arranque, copia de recursos, servidor y ventana). public/BardoStudio-Setup-1.0.5.exe (158.267.167 bytes, SHA256 a05ec7bab93a7082b53a7c010acffbe9ebb36301a2d9f0374af773f579937e24); 1.0.4 eliminado de public/. Dev server reanimado (PID 10453, .zscripts/dev.pid): GET / 200, instalador 200 (octet-stream, 158 MB), LEEME 200, worker 200. Enlace del botón «Instalador Windows» → 1.0.5 verificado en el navegador; 0 errores de consola. Historial git rehecho (los 2 commits con mensaje-UUID de la sesión anterior + los cambios nuevos → 2 commits limpios: c4e9f09 feat(fase2) + d6107fe docs(worklog)); blob máximo 103 KB. Push pendiente: requiere token nuevo del usuario (el de la tarea 26 era de un solo uso y se recomendó revocarlo).
+
+---
+Task ID: 28
+Agent: Z.ai Code (principal)
+Task: Limpieza de UI profesional — quitar el botón «Instalador Windows» de la cabecera y eliminar las demos de la pantalla inicial («¿Sin archivo a mano?», «Demo con voz real (recomendada)», «Demo sintética (solo silencios)»), incluidos sus WAV (≈24,6 MB).
+
+Work Log:
+- page.tsx: eliminado el bloque <a href="/BardoStudio-Setup-1.0.5.exe"> (botón ámbar «Instalador Windows») y el import HardDriveDownload. El .exe y el LEEME siguen servibles por URL directa; solo desaparece el botón de la UI.
+- page.tsx: eliminados loadDemo, cargarDemoVoz, demoLoading/demoVozLoading, demoUrlDe y la prop sourceKind del hook (sin usos). runAnalysis/attachSource simplificados (ya solo existe la vía «user»). Restauración de proyectos demo antiguos → flujo estándar «falta el audio original → re-adjuntar» (como Camtasia). guardarProyecto ahora guarda el audio SIEMPRE que haya blob en memoria (antes solo sourceKind «user»: los proyectos demo re-adjuntados no guardaban audio).
+- upload-panel.tsx: eliminada toda la sección de demos (botones + párrafo descriptivo) y sus 4 props; imports limpios (sin Button/Mic/Sparkles/formatBytes). Tarjeta «Análisis local» reescrita: «la Fase 2 puede usar IA conectada o el motor 100 % local y gratis» (refleja la 1.0.5).
+- phase-teasers.tsx: RestoreCard sin prop isDemo (texto único «Re-seleccionar el archivo y analizar»).
+- Archivos borrados: public/demo/narracion-voz-demo.wav (8,5 MB) y public/demo/narration-demo.wav (16,1 MB). Se CONSERVA public/demo/musica/ (catálogo de Fase 3, lo usa config/musica.json) y public/sfx.
+- Bugfixes colaterales encontrados al verificar E2E:
+  1) POST /api/proyectos 500 en arranque limpio: db/proyectos no existía → añadido mkdir(recursive) en el POST (y en escribirManifiesto de user-music). Crítico también para el primer arranque del instalador de escritorio.
+  2) Overflow horizontal en móvil 375px: la grilla «umbrales + tabla» usaba columnas implícitas (track auto → min-content 392px por la tabla de silencios). Arreglado con grid-cols-1 explícito + min-w-0 en ambas tarjetas + overflow-x-auto en el contenedor de la tabla (ahora desplaza horizontal, no rompe el layout).
+- Docs/scripts: empaquetar.sh (sanity check demo → catálogo de música), LEEME-INSTALACION.txt (desktop+public: primeros pasos sin mencionar demo), AGENTS.md y CLAUDE.md actualizados.
+- Verificación E2E real con agent-browser: página limpia (0 «Instalador», 0 «Demo», 0 «¿Sin archivo a mano?» en DOM), subida de WAV real de 12 s → Fase 1 analiza (detecta el silencio 2,5–5,1 s), aprobación con checkbox → Fase 2 desbloqueada con sus dos motores; guardar proyecto → POST 201 con audio y análisis; recarga → restauración completa con audio; borrado del proyecto en servidor → degradación elegante («Falta el audio original» + re-adjuntar, 0 errores de consola); móvil 375px sin overflow horizontal (scrollX 0, tarjetas 343px); VLM confirma UI profesional y limpia. Capturas: .zscripts/ui-limpia-{desktop,movil,fase1}.png y ui-final-movil.png. lint 0 errores; dev.log sin errores de ejecución.
+
+Stage Summary:
+- La pantalla inicial es 100 % profesional: solo carga de archivo, «Abrir un proyecto guardado», «Ajustes IA» y «Proyectos» en cabecera. Sin botón de instalador ni demos; 24,6 MB menos en public/ (y ~24 MB menos en el instalador futuro).
+- Los proyectos demo antiguos persistidos siguen abriendo (análisis restaurado) y piden re-adjuntar audio; el guardado ahora siempre persiste el audio en memoria.
+- Corregido bug de primer arranque (mkdir db/proyectos y db/user-music) y overflow móvil de la grilla Fase 1.
+- Pendiente para la próxima sesión: re-empaquetar el instalador (1.0.6) con estos cambios y push a GitHub (se necesita token nuevo del usuario).
