@@ -7,7 +7,7 @@ REQUISITOS
   · No necesitas Node, Bun ni Python: todo va incluido.
 
 INSTALACIÓN
-  1. Ejecuta BardoStudio-Setup-1.0.3.exe.
+  1. Ejecuta BardoStudio-Setup-1.0.4.exe.
   2. Si aparece "Windows protegió tu equipo" (SmartScreen, porque el
      instalador no está firmado): "Más información" → "Ejecutar de todas
      formas".
@@ -32,21 +32,26 @@ LA IA DE LA FASE 2 ES REEMPLAZABLE (elige una opción)
 
   OPCIÓN A · TU PROPIA API (recomendada: la app habla DIRECTAMENTE con el
   servicio que TÚ elijas, sin depender de nadie más)
-    1. Consigue una clave de API de OpenAI, Groq (con capa gratuita),
-       Mistral u otro servicio compatible con el formato de OpenAI. También
-       sirve un servidor local (whisper.cpp, LM Studio, vLLM…): sin coste.
+    1. Consigue una clave de API de OpenAI, Google Gemini (gratuita en
+       aistudio.google.com), DeepSeek, Groq (con capa gratuita), Mistral u
+       otro servicio compatible con el formato de OpenAI. También sirve un
+       servidor local (whisper.cpp, LM Studio, vLLM…): sin coste.
     2. En la app: engranaje «Ajustes IA» → pestaña «API propia» →
        elige el servicio (se rellenan URL y modelos) → pega tu clave →
        «Guardar y probar». La app hace una prueba REAL antes de guardar.
     · Puedes poner solo el modelo de transcripción, solo el de chat
       (tensión) o ambos. Sin modelo de chat, la tensión se calcula con la
       heurística local.
+    · Google Gemini y DeepSeek solo hacen el ANÁLISIS DE TENSIÓN (chat),
+      no transcriben: deja vacío el modelo de transcripción, o combínalos
+      con un Whisper local en la «URL de transcripción aparte» (sección
+      siguiente; presets directos nueva en 1.0.4).
 
     COMBINACIÓN 100 % LOCAL CON LM STUDIO + WHISPER (sin coste, sin
     salir a internet) — nueva en 1.0.3:
     · LM Studio NO transcribe (aún no tiene el endpoint de transcripción),
       PERO sí hace el análisis de tensión (chat). Whisper.cpp hace la
-      transcripción. La app 1.0.3 permite usar DOS URLs: una para chat y
+      transcripción. La app permite usar DOS URLs: una para chat y
       otra para transcripción.
     · Pasos:
       1) LM Studio: pestaña «Developer» → activa el servidor local
