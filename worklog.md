@@ -515,3 +515,40 @@ Work Log:
 
 Stage Summary:
 - Instalador 1.0.4 PUBLICADO y descargable desde la web (botón «Instalador Windows»), incluye los presets Google Gemini y DeepSeek, la URL de transcripción aparte (1.0.3) y todo lo anterior. El flujo de actualización conserva datos y claves (%APPDATA%\Bardo Studio). Patrón de daemon doble fork re-validado para builds futuros.
+
+---
+Task ID: 26
+Agent: main (Z.ai Code)
+Task: Actualizar el respaldo en GitHub (push con token facilitado por el usuario)
+
+Work Log:
+- Verificados los 3 commits pendientes (0e62568 baseUrlAsr/1.0.3, e48b3da presets Google Gemini+DeepSeek, bb27502 versión 1.0.4) y que el push no contenía archivos grandes (máx. blob 99 KB, worklog; el .exe sigue ignorado y no se respalda).
+- git push con token de uso único (sin persistirlo en .git/config ni en archivos): cd3c61f..bb27502 main → main correcto.
+- git fetch para sincronizar origin/main; rama local y remota idénticas (HEAD remoto = bb27502).
+- El instalador 1.0.4 (.exe, 151 MB) NO se sube a GitHub (límite 100 MB y .gitignore): se sigue distribuyendo solo desde la web (public/).
+
+Stage Summary:
+- Respaldo en GitHub al día con todo el trabajo hasta la 1.0.4. Nota de seguridad: el token del usuario quedó expuesto en el chat; se usó una sola vez y no se almacenó (recomendado rotarlo).
+
+---
+Task ID: 27
+Agent: main (Z.ai Code)
+Task: «Fase 2 es un problema: servidores de IA que fallan, coste trasladado al usuario y gente que necesita algo 100 % gratis» → programar la alternativa GRATIS por puro código/recursos locales (transcripción local + tensión local), fácil de usar.
+
+Work Log:
+- Diagnóstico de lo heredado: la sesión anterior dejó commit 50c8c98 (asr-local.ts + worker + motor «local» en pipeline/analyze-tension + estado en page.tsx) pero INCOMPLETO: sin selector visible (imports Cpu/Cloud/Select sin usar), y un BUG BLOQUEANTE en el protocolo del worker (el mensaje «listo» no devolvía el id → preparar() colgaba para siempre). Sin ADR, sin LEEME, sin worklog, sin instalador.
+- Verificado el ecosistema desde el sandbox: transformers.js 3.8.1 existe en jsdelivr (CORS *), HuggingFace sirve los ONNX con CORS correcto, y los repos Xenova/whisper-tiny, onnx-community/whisper-base y Xenova/whisper-small tienen TODOS los dtype (q4/q8/fp32) → el mapeo webgpu(fp32+q4)/wasm(q8) del worker es válido.
+- BUGFIX worker: «listo» ahora devuelve el id; asr-local.ts: preparar() envuelve también el error del reintento WASM (mensaje amable con la causa).
+- UI nueva en la tarjeta de arranque de la Fase 2 (page.tsx): radiogroup accesible «IA conectada» (ámbar, nombre del proveedor activo) vs «100 % local · gratis» (esmeralda); al elegir local aparece el selector de calidad (Rápido ~42 / Equilibrado ~80 / Detallado ~250 MB) con nota WebGPU/CPU; texto de ayuda según motor; aviso «IA sin conectar» gana botón «Usar el motor local (gratis)» que cambia de motor y RELANZA en el mismo clic (runFase2 recibe motorForzado para evitar el closure obsoleto); descripción de la sección actualizada.
+- Persistencia: bardo.motor-fase2 + bardo.modelo-local en localStorage; por defecto local si no hay IA conectada.
+- Heurística local AMPLIADA (analyze-tension): raizLigera() para que «espadas»≈«espada», «goblins»≈«goblin»; léxicos de config.json ampliados con vocabulario D&D/fantasía (dragón, bestia, cripta, espectro, hechizo, amanecer, brisa…). Pruebas curl con motor «local»: calma→3, batalla dragón→91, misterio cripta→81, victoria→85, ánimos correctos, CERO llamadas a proveedores.
+- lint 0 errores; JSON de config validado.
+- Verificación E2E REAL con agent-browser: demo con voz → Fase 1 aprobada → motor «100 % local» + modelo «Rápido» → DESCARGA REAL del modelo (82,7 MB con progreso en la UI) → transcripción real en el navegador («La pasada del dragón…», whisper-tiny) → 9 escenas puntuadas con heurística (Emoción: heuristico) → 0 peticiones POST /api/transcribe (cero nube) → recarga: motor/modelo/proyecto persistidos → móvil 375 px correcto (VLM) → 0 errores de consola. Capturas en .zscripts/fase2-local-{desktop,mobile}.png.
+- Docs: ADR-015 (docs/decisions/015-motor-local-gratis-fase2.md) con decisión, protocolo y verificación; LEEME-INSTALACION.txt reescrito (desktop+public): «MODO 1 · 100 % GRATIS» primero, re-letra de opciones, avisos honestos y problemas del motor local.
+- empaquetar.sh: sanity check del worker (public/workers/asr-local.js).
+- Versión 1.0.5: desktop/package.json + href del botón «Instalador Windows».
+- (La sesión continúa: re-empaquetado del instalador 1.0.5 y push a GitHub.)
+
+Stage Summary:
+- La Fase 2 ahora tiene dos motores: «servidor» (IA conectada, como siempre) y «local» (Whisper EN EL NAVEGADOR vía transformers.js 3.8.1 en un Web Worker con fallback WebGPU→WASM, + heurística de tensión ampliada y editable). El motor local es gratis, sin claves ni cuentas ni límites, el audio no sale del equipo, y solo la primera descarga del modelo usa internet (después queda cacheada). Elegido desde la propia tarjeta de la Fase 2 y persistido; por defecto si no hay IA conectada.
+- CIERRE de la tarea 27 (misma sesión): instalador 1.0.5 re-empaquetado como daemon doble-fork con supervisor de 3 reintentos → 7/7 OK AL PRIMER INTENTO en ~2,5 min (smoke real superado: primer arranque, copia de recursos, servidor y ventana). public/BardoStudio-Setup-1.0.5.exe (158.267.167 bytes, SHA256 a05ec7bab93a7082b53a7c010acffbe9ebb36301a2d9f0374af773f579937e24); 1.0.4 eliminado de public/. Dev server reanimado (PID 10453, .zscripts/dev.pid): GET / 200, instalador 200 (octet-stream, 158 MB), LEEME 200, worker 200. Enlace del botón «Instalador Windows» → 1.0.5 verificado en el navegador; 0 errores de consola. Historial git rehecho (los 2 commits con mensaje-UUID de la sesión anterior + los cambios nuevos → 2 commits limpios: c4e9f09 feat(fase2) + d6107fe docs(worklog)); blob máximo 103 KB. Push pendiente: requiere token nuevo del usuario (el de la tarea 26 era de un solo uso y se recomendó revocarlo).
