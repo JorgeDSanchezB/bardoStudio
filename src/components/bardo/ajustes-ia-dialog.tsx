@@ -7,8 +7,9 @@
  *
  *  · Z.AI incluida — directa en la web del servidor; en la app de escritorio
  *    vía relé de la web (pegar URL, igual que la 1.0.1).
- *  · API propia compatible OpenAI — OpenAI, Groq, Mistral, servidores
- *    locales (whisper.cpp, LM Studio…): el usuario pone SU clave.
+ *  · API propia compatible OpenAI — OpenAI, Google Gemini, DeepSeek, Groq,
+ *    Mistral, servidores locales (whisper.cpp, LM Studio…): el usuario pone
+ *    SU clave.
  *  · Deepgram — solo transcripción (la tensión usa la heurística local).
  *
  * Las claves se guardan junto al servidor interno de la app (archivo local
@@ -90,6 +91,20 @@ const PREAJUSTES: Array<{
     modeloAsr: "whisper-1",
     modeloChat: "gpt-4o-mini",
     nota: "Plataforma de OpenAI: Whisper (transcripción) + GPT (tensión).",
+  },
+  {
+    id: "google",
+    etiqueta: "Google Gemini",
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+    modeloChat: "gemini-2.0-flash",
+    nota: "Tensión con Gemini (capa compatible con OpenAI). Clave gratuita en Google AI Studio (aistudio.google.com → «Get API key»). No transcribe: para transcribir monta Whisper local en «URL de transcripción aparte» o cambia a la IA incluida.",
+  },
+  {
+    id: "deepseek",
+    etiqueta: "DeepSeek",
+    baseUrl: "https://api.deepseek.com/v1",
+    modeloChat: "deepseek-chat",
+    nota: "Tensión con DeepSeek-V3, muy económico. Clave en platform.deepseek.com → API Keys (requiere saldo). No transcribe: para transcribir monta Whisper local en «URL de transcripción aparte» o cambia a Groq (hace ambas cosas).",
   },
   {
     id: "groq",
@@ -328,8 +343,9 @@ export function AjustesIaDialog({ open, onOpenChange }: Props) {
           <DialogDescription className="text-zinc-500">
             La Fase 2 (transcripción y análisis de tensión) usa una IA{" "}
             <strong className="font-semibold text-zinc-400">reemplazable</strong>
-            : la incluida, tu propia API compatible con OpenAI (OpenAI, Groq,
-            Mistral, servidores locales) o Deepgram. El resto de la app
+            : la incluida, tu propia API compatible con OpenAI (OpenAI, Google,
+            DeepSeek, Groq, Mistral, servidores locales) o Deepgram. El resto
+            de la app
             (mezcla, efectos, editor, exportación) funciona siempre en tu
             equipo.
           </DialogDescription>

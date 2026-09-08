@@ -481,3 +481,20 @@ Work Log:
 
 Stage Summary:
 - RESPUESTA al usuario: LM Studio solo no transcribe (aún), pero desde la 1.0.3 Bardo combina LM Studio (chat/tensión, :1234) + whisper.cpp (transcripción, :8080) con «URL de transcripción aparte» — todo local, gratis y privado. Instrucciones paso a paso en LEEME-INSTALACION.txt y en la propia ayuda del diálogo. INSTALADOR 1.0.3 publicado y descargable.
+
+---
+Task ID: 24
+Agent: main (Z.ai Code)
+Task: Añadir preajustes «Google Gemini» y «DeepSeek» a Ajustes de IA → API propia (el usuario preguntó cómo usar la opción Personalizada con Google o DeepSeek)
+
+Work Log:
+- Leído ajustes-ia-dialog.tsx, lib/server/ia.ts y api/ia-proveedores/route.ts para confirmar el contrato: chat vía POST {baseUrl}/chat/completions (Bearer), ASR vía {baseUrlAsr|baseUrl}/audio/transcriptions (multipart), prueba real antes de guardar.
+- Añadidos 2 preajustes al array PREAJUSTES: «Google Gemini» (https://generativelanguage.googleapis.com/v1beta/openai, modelo gemini-2.0-flash, sin ASR) y «DeepSeek» (https://api.deepseek.com/v1, modelo deepseek-chat, sin ASR), con notas que avisan de que no transcriben y cómo combinar.
+- URLs sin barra final para que el re-detectado de preset al reabrir el diálogo funcione (normalizador recorta «/» finales).
+- Actualizada la descripción del diálogo y el comentario de cabecera para incluir Google/DeepSeek.
+- bun run lint: sin errores. Dev log limpio.
+- Verificación con agent-browser: página carga, diálogo abre, pestaña «API propia» OK, desplegable muestra OpenAI/Google Gemini/DeepSeek/Groq/Mistral/Servidor local/Personalizada; al elegir Gemini y DeepSeek los campos se rellenan correctamente (URL, modelo chat, ASR vacío). Sin errores de consola ni de página.
+
+Stage Summary:
+- Ya se puede conectar Google Gemini o DeepSeek en 2 clics (elegir preset + pegar clave) sin teclear URLs.
+- Nota clave: ambos solo hacen CHAT (análisis de tensión); no tienen endpoint de transcripción compatible OpenAI, así que «Modelo transcripción» queda vacío y la Fase 2 no transcribe con ellos solos (combinar con Whisper local vía «URL de transcripción aparte», o cambiar a Z.AI/Groq/Deepgram para transcribir).
