@@ -575,3 +575,41 @@ Stage Summary:
 - Los proyectos demo antiguos persistidos siguen abriendo (análisis restaurado) y piden re-adjuntar audio; el guardado ahora siempre persiste el audio en memoria.
 - Corregido bug de primer arranque (mkdir db/proyectos y db/user-music) y overflow móvil de la grilla Fase 1.
 - Pendiente para la próxima sesión: re-empaquetar el instalador (1.0.6) con estos cambios y push a GitHub (se necesita token nuevo del usuario).
+
+---
+
+Task ID: 29-sfx-reales (main, Z.ai Code)
+Task: Sustituir los 37 efectos de sonido sintetizados por los MP3 reales del usuario y dejarlos funcionando en el repositorio y en la instalación del PC (Roaming + resources), corrigiendo el mojibake y los JSON inválidos.
+
+Work Log:
+- Diagnóstico: los MP3 fuente están en `bardoEstudio/Efectos de sonido/` (37 archivos). Los nombres de archivo ya estaban en UTF-8 correcto (Gruñido = C3 B1, dragón = C3 B3); el `Ã±`/`Ã³` que veía el usuario estaba en los JSON que había generado la sesión anterior (doble codificación) y no en los MP3.
+- Causas encontradas: (1) `config/sfx.json` con BOM en el repo → la API leía con `process.cwd()` = repo y `JSON.parse` fallaba (HTTP 500); (2) categoría `campanada` apuntando a `campanada-grave` (el id real es `campana-grave`), por lo que la API descartaba la categoría; (3) nombres de archivo con espacios/mayúsculas y rutas `/sfx/Nombre con espacios.wav`; (4) etiquetas heredadas con mojibake (`seÃ±al`, `acciÃ³n`); (5) `sfx-seccion.tsx` no refrescaba la biblioteca si ya había una persistida (`if (config && biblioteca) return`), de modo que un proyecto con localStorage antiguo seguía apuntando a archivos inexistentes → solo sonaba uno.
+- `scripts/regen-sfx-from-mp3.mjs` reescrito: convierte cada MP3 a WAV mono 22050 Hz PCM 16-bit con ffmpeg (`-ac 1 -ar 22050 -c:a pcm_s16le`), nombre = slug ASCII (`<id>.wav`), duración exacta leyendo el chunk `data` del WAV (valida formato), nombres visibles con acentos correctos (mapa `NOMBRES`), reparación de mojibake en etiquetas heredadas, validación/reparación de `sfxId` de categorías (alias + coincidencia difusa) y despliegue opcional con `--deploy` (repo, Roaming, resources; incluye la subcarpeta duplicada `config/config`). JSON siempre UTF-8 sin BOM.
+- Ejecutado `node scripts/regen-sfx-from-mp3.mjs --deploy`: 37 WAV · 54.67 MB · mono 22050 Hz PCM16 en los 3 entornos; 0 categorías con `sfxId` inexistente.
+- Verificación: 37/37 WAV con cabecera RIFF/WAVE válida y formato 1 canal/22050/16-bit en repo, Roaming y resources; 37/37 rutas de `sfx.json` resueltas; 9/9 pistas de `musica.json` presentes; 0 BOM y 0 mojibake en los 5 juegos de config (repo, Roaming x2, resources x2); nombres con acentos correctos (Cristal rompiéndose, Destello mágico, Explosión, Gruñido de monstruo, Latido del corazón, Pájaros, Rugido de dragón).
+- Código: `src/components/bardo/sfx-seccion.tsx` ahora refresca siempre la biblioteca al montar (ref de un solo disparo + `cache: "no-store"`) conservando la config editada (`configTouched`), y repara eventos guardados cuyo `sfxId` ya no existe mapeándolos por categoría.
+- Docs: `docs/current-state.md` (fila de Fase 2.5 + hito 14-sfx-reales).
+
+Stage Summary:
+- Los efectos de sonido del producto son ya los reales del usuario, con nombres de archivo limpios y configuración consistente en los tres entornos; el módulo SFX carga sin HTTP 500, sin caracteres corruptos y con la biblioteca al día aunque el navegador tuviera datos antiguos.
+- Nota operativa: la app instalada ejecuta el build compilado que ya estaba en `Roaming\Bardo Studio\app`; el arreglo del refresco se aplica al abrir un proyecto nuevo (que reinicia `faseSfx`) y en el próximo empaquetado. Los proyectos guardados con anterioridad conservan su biblioteca embebida hasta reabrir/crear uno nuevo.
+
+---
+
+Task ID: 30-asr-cache (main, Z.ai Code)
+Task: Evitar que el modelo local de transcripción (Whisper) se vuelva a descargar en cada arranque y dejarlo arreglado en el repositorio y en la app instalada.
+
+Work Log:
+- Síntoma: el aviso «Descargando el modelo Equilibrado (solo la primera vez) · 116,7/117,9 MB» reaparecía en cada sesión aunque el usuario ya hubiera transcrito muchas veces.
+- Diagnóstico en el perfil de Electron: `%APPDATA%\Bardo Studio\Service Worker\CacheStorage` contenía 6 orígenes distintos (1.195 MB) y cada uno con la MISMA caché `transformers-cache` y el MISMO archivo de 117,88 MB, creados a lo largo del día. Los `index.txt` mostraban orígenes `http://127.0.0.1:59074`, `:49631`, `:58635`, `:51936`, `:55346` y `:60461`.
+- Causa raíz: el envoltorio Electron elegía un puerto libre ALEATORIO en cada arranque (`srv.listen(0)`). El navegador aísla Cache Storage, localStorage e IndexedDB por ORIGEN, así que cada puerto nuevo = caché nueva = descarga completa del modelo (y pérdida del estado del navegador entre sesiones).
+- Arreglo: `puertoLibre()` reserva siempre `PUERTO_PREFERIDO = 60461` (el último origen usado, para reutilizar la caché ya descargada); si está ocupado reintenta durante 6 s (evita el fallo al cerrar y reabrir rápido) y solo entonces cae a un puerto efímero. Documentado como invariante en `desktop/LEEME.md`.
+- Repositorio: se incorpora el fuente del envoltorio `desktop/main.cjs` (proceso principal de Electron: copia de recursos a `%APPDATA%\Bardo Studio\app`, arranque del servidor standalone, ventana) con el puerto fijo, más `scripts/instalar-main-escritorio.mjs` (escribe `main.cjs` dentro de `resources/app.asar`, con respaldo, offsets e integridad SHA-256 verificados, idempotente).
+- App instalada: se reempaquetó `resources/app.asar` (13.596 → 14.345 bytes) con el envoltorio corregido; respaldo en `resources/app.asar.bak-2026-10-25T23-45-48-021Z`. Comprobado `node --check` sobre el `main.cjs` extraído del ASAR.
+- Verificación en ejecución: dos arranques consecutivos del .exe escriben `arranque v1.0.6 · puerto 60461` en `bardo-servidor.log`, `GET /api/config` responde 200 y NO aparece ningún origen nuevo en CacheStorage (se mantiene 1).
+- Limpieza: borrados los 5 orígenes obsoletos (`CacheStorage` 1.195 MB → 199,2 MB; ~1 GB liberado), conservando el origen `60461` con el modelo ya descargado.
+- Nota: transformers.js emite eventos de progreso también al LEER de caché, así que el texto «Descargando…» puede aparecer un instante; ya no hay tráfico de red ni descarga real (~118 MB) después del primer uso.
+- Efecto colateral positivo: al fijar el origen, el estado del navegador (localStorage `bardo-project-v1` e IndexedDB `bardo-studio`) ya persiste entre arranques.
+
+Stage Summary:
+- El modelo local de Whisper se descarga una sola vez de verdad: mismo puerto en cada arranque, misma caché, sin duplicados. El arreglo vive en `desktop/main.cjs` + `scripts/instalar-main-escritorio.mjs` (repositorio) y está aplicado en la instalación del PC.

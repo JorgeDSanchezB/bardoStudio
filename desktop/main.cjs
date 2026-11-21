@@ -141,16 +141,47 @@ function instalarRecursos() {
   return true;
 }
 
-/** Busca un puerto TCP libre en 127.0.0.1. */
-function puertoLibre() {
+/**
+ * Puerto fijo del servidor local (127.0.0.1).
+ *
+ * IMPORTANTE: el navegador aísla Cache Storage, localStorage e IndexedDB por
+ * ORIGEN (http://127.0.0.1:<puerto>). Si el puerto cambia en cada arranque,
+ * el modelo local de Whisper (transformers.js) se vuelve a descargar siempre
+ * (~118 MB) y se pierde el estado del navegador. Por eso se reserva siempre el
+ * mismo puerto y solo se usa uno efímero como respaldo si está ocupado.
+ */
+const PUERTO_PREFERIDO = 60461;
+
+/** Intenta escuchar en un puerto concreto de 127.0.0.1 y lo libera. */
+function reservarPuerto(puerto) {
   return new Promise((resolver, rechazar) => {
     const srv = net.createServer();
-    srv.on("error", rechazar);
-    srv.listen(0, "127.0.0.1", () => {
+    srv.once("error", rechazar);
+    srv.listen(puerto, "127.0.0.1", () => {
       const p = srv.address().port;
       srv.close(() => resolver(p));
     });
   });
+}
+
+/** Reserva el puerto estable; reintenta si acaba de quedar libre. */
+async function puertoLibre() {
+  // tras cerrar la app el puerto puede tardar un instante en liberarse:
+  // reintentar evita caer a un puerto efímero (que invalidaría la caché)
+  for (let intento = 0; intento < 20; intento++) {
+    try {
+      return await reservarPuerto(PUERTO_PREFERIDO);
+    } catch (e) {
+      if (e.code !== "EADDRINUSE" && e.code !== "EACCES") throw e;
+      await new Promise((r) => setTimeout(r, 300));
+    }
+  }
+  // último recurso: esa sesión no reutilizará la caché del modelo
+  log(
+    `puerto ${PUERTO_PREFERIDO} ocupado tras 6 s: usando uno efímero ` +
+      "(la caché del modelo de transcripción no se reutilizará en esta sesión)"
+  );
+  return reservarPuerto(0);
 }
 
 /** Lanza el servidor Next.js standalone con el Node de Electron. */

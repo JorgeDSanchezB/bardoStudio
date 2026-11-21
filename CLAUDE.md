@@ -46,6 +46,12 @@ config/config.json          — Mapa de Atributos Dinámicos (pesos/umbrales edi
 public/demo/musica/         — catálogo de música de la Fase 3 (los WAVs demo de narración se retiraron)
 scripts/generate-demo-audio.ts — WAV demo determinista (regenerable byte a byte)
 db/                         — audio de proyectos + user-music (NUNCA re-codificar)
+desktop/main.cjs            — envoltorio Electron (copia recursos a %APPDATA%\Bardo Studio\app,
+                              servidor local, ventana). Puerto local FIJO (60461): Cache Storage,
+                              localStorage e IndexedDB están aislados por ORIGEN; un puerto
+                              aleatorio re-descarga el modelo Whisper (~118 MB) cada arranque.
+scripts/instalar-main-escritorio.mjs — escribe desktop/main.cjs en resources/app.asar (con respaldo
+                              y verificación SHA-256). Ver desktop/LEEME.md.
 ```
 
 ## Convenciones NO negociables
@@ -60,6 +66,7 @@ db/                         — audio de proyectos + user-music (NUNCA re-codifi
 - Canvas: dpr capado a 2, ResizeObserver, vista derivada en render, Pointer Events con `setPointerCapture` y `touch-none`.
 - Ediciones de Fase 5: funciones puras en `src/lib/fase5/ediciones.ts`, grid de 0.1 s, `origen: "edicion"` para trazabilidad; clamps compartidos entre preview y commit (`limitesBorde`).
 - La Fase 5 materializa bloques **solo tras aprobar la Fase 4** (guard en el efecto) — así los cambios manuales de pista de la Fase 3 sí llegan al editor y al render.
+- **Puerto fijo en el escritorio**: `desktop/main.cjs` reserva siempre `60461` (respaldo efímero solo si está ocupado). No volver a `listen(0)`: rompe la caché del modelo local de transcripción y la persistencia del navegador.
 
 ## Estado actual (post Task 9-verif)
 

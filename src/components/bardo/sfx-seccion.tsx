@@ -68,12 +68,16 @@ export function SfxSeccion() {
   const biblioteca = faseSfx.biblioteca;
 
   // ---------- cargar config + biblioteca (GET /api/sfx-config) ----------
+  // Se refresca siempre al montar: la biblioteca persistida puede apuntar a
+  // archivos que ya no existen (p. ej. tras regenerar los SFX reales).
+  const refrescoSfxRef = useRef(false);
   useEffect(() => {
-    if (config && biblioteca) return;
+    if (refrescoSfxRef.current) return;
+    refrescoSfxRef.current = true;
     let vivo = true;
     (async () => {
       try {
-        const res = await fetch("/api/sfx-config");
+        const res = await fetch("/api/sfx-config", { cache: "no-store" });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = (await res.json()) as SfxConfig & {
           biblioteca: SfxDef[];
@@ -85,7 +89,8 @@ export function SfxSeccion() {
           Array.isArray(data.biblioteca) &&
           data.biblioteca.length > 0
         ) {
-          useProjectStore.getState().seedConfigSfx({
+          const st = useProjectStore.getState();
+          st.seedConfigSfx({
             config: {
               version: data.version ?? 1,
               defectos: data.defectos,
@@ -93,6 +98,18 @@ export function SfxSeccion() {
             },
             biblioteca: data.biblioteca,
           });
+          // reparar eventos guardados que apuntan a efectos ya inexistentes
+          const ids = new Set(data.biblioteca.map((b) => b.id));
+          const porCategoria = new Map<string, string>(
+            data.categorias.map((c): [string, string] => [c.categoria, c.sfxId])
+          );
+          for (const ev of useProjectStore.getState().faseSfx.eventos) {
+            if (ids.has(ev.sfxId)) continue;
+            const nuevo = porCategoria.get(ev.categoria);
+            if (nuevo && ids.has(nuevo)) {
+              st.ajustarSfxEvento(ev.id, { sfxId: nuevo });
+            }
+          }
         }
       } catch (e) {
         if (vivo)
@@ -106,7 +123,7 @@ export function SfxSeccion() {
     return () => {
       vivo = false;
     };
-  }, [config, biblioteca]);
+  }, []);
 
   // ---------- incorporar los SFX propios del servidor (si aún no están) ----------
   useEffect(() => {

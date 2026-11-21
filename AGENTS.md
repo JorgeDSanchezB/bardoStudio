@@ -29,6 +29,7 @@
 - `config/config.json` — pesos/umbrales editables en caliente.
 - `public/demo/` — catálogo de música de la Fase 3 (`musica/`). Los WAVs de demo de narración se retiraron (UI más limpia; regenerables con `scripts/generate-demo-voz.ts` si hicieran falta).
 - `db/` — audio de proyectos y `user-music/` (archivos originales del usuario; **nunca re-codificar ni borrar**).
+- `desktop/main.cjs` + `scripts/instalar-main-escritorio.mjs` — envoltorio Electron (copia de recursos a `%APPDATA%\Bardo Studio\app`, servidor local, ventana). **El puerto local es fijo (`60461`)**: Cache Storage/localStorage/IndexedDB están aislados por origen y un puerto aleatorio re-descarga el modelo Whisper (~118 MB) en cada arranque. Ver `desktop/LEEME.md`.
 
 ## Reglas del proyecto
 
@@ -42,6 +43,7 @@
 8. La Fase 5 materializa bloques desde la mezcla **aprobada** de la Fase 4 (guard del efecto) — no cambiar sin motivo.
 9. No escribir tests salvo petición expresa; no crear rutas nuevas fuera de `/`.
 10. Toda entrega se registra en `worklog.md` (sección `--- Task ID / Agent / Task / Work Log / Stage Summary`).
+11. **Puerto fijo en el escritorio**: `desktop/main.cjs` reserva siempre `60461` (respaldo efímero solo si está ocupado). No volver a `listen(0)`: rompe la caché del modelo local de transcripción y la persistencia del navegador.
 
 ## Verificación tras cada cambio
 

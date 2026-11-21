@@ -13,7 +13,7 @@
     {
       "categoria": "trueno",
       "etiqueta": "Trueno / tormenta",
-      "sfxId": "thunder-01",
+      "sfxId": "trueno-cercano",
       "activo": true,
       "palabras": [
         "trueno",
@@ -33,7 +33,7 @@
     {
       "categoria": "lluvia",
       "etiqueta": "Lluvia",
-      "sfxId": "rain-01",
+      "sfxId": "lluvia-constante",
       "activo": true,
       "palabras": [
         "lluvia",
@@ -49,7 +49,7 @@
     {
       "categoria": "viento",
       "etiqueta": "Viento / brisa",
-      "sfxId": "wind-01",
+      "sfxId": "viento-invernal",
       "activo": true,
       "palabras": [
         "viento",
@@ -68,7 +68,7 @@
     {
       "categoria": "pasos",
       "etiqueta": "Pasos / pisadas",
-      "sfxId": "footsteps-01",
+      "sfxId": "pasos-sobre-grava",
       "activo": true,
       "palabras": [
         "paso",
@@ -87,7 +87,7 @@
     {
       "categoria": "puerta",
       "etiqueta": "Puerta rechinando",
-      "sfxId": "door-creak-01",
+      "sfxId": "puerta-rechinando",
       "activo": true,
       "palabras": [
         "puerta",
@@ -108,7 +108,7 @@
     {
       "categoria": "portazo",
       "etiqueta": "Portazo / golpe",
-      "sfxId": "door-slam-01",
+      "sfxId": "portazo",
       "activo": true,
       "palabras": [
         "portazo",
@@ -124,7 +124,7 @@
     {
       "categoria": "espada",
       "etiqueta": "Choque de espadas / metal",
-      "sfxId": "sword-clash-01",
+      "sfxId": "choque-de-espadas",
       "activo": true,
       "palabras": [
         "espada",
@@ -149,7 +149,7 @@
     {
       "categoria": "desenvainar",
       "etiqueta": "Desenvainar",
-      "sfxId": "sword-unsheathe-01",
+      "sfxId": "desenvainar",
       "activo": true,
       "palabras": [
         "desenvainar",
@@ -165,7 +165,7 @@
     {
       "categoria": "rugido",
       "etiqueta": "Rugido / gruñido",
-      "sfxId": "roar-01",
+      "sfxId": "rugido-de-bestia",
       "activo": true,
       "palabras": [
         "rugido",
@@ -185,7 +185,7 @@
     {
       "categoria": "aullido",
       "etiqueta": "Aullido de lobo",
-      "sfxId": "wolf-howl-01",
+      "sfxId": "aullido-de-lobo",
       "activo": true,
       "palabras": [
         "aullido",
@@ -203,7 +203,7 @@
     {
       "categoria": "dragon",
       "etiqueta": "Dragón",
-      "sfxId": "dragon-roar-01",
+      "sfxId": "rugido-de-dragon",
       "activo": true,
       "palabras": [
         "dragon",
@@ -216,7 +216,7 @@
     {
       "categoria": "pajaro",
       "etiqueta": "Pájaros",
-      "sfxId": "bird-chirp-01",
+      "sfxId": "pajaros",
       "activo": true,
       "palabras": [
         "pajaro",
@@ -236,7 +236,7 @@
     {
       "categoria": "grillo",
       "etiqueta": "Grillos",
-      "sfxId": "crickets-01",
+      "sfxId": "grillos",
       "activo": true,
       "palabras": [
         "grillo",
@@ -249,7 +249,7 @@
     {
       "categoria": "agua",
       "etiqueta": "Arroyo / agua corriente",
-      "sfxId": "water-flow-01",
+      "sfxId": "arroyo",
       "activo": true,
       "palabras": [
         "agua",
@@ -266,7 +266,7 @@
     {
       "categoria": "olas",
       "etiqueta": "Olas del mar",
-      "sfxId": "waves-01",
+      "sfxId": "olas-del-mar",
       "activo": true,
       "palabras": [
         "ola",
@@ -285,7 +285,7 @@
     {
       "categoria": "goteo",
       "etiqueta": "Goteo",
-      "sfxId": "drip-01",
+      "sfxId": "goteo-de-caverna",
       "activo": true,
       "palabras": [
         "gota",
@@ -301,7 +301,7 @@
     {
       "categoria": "fuego",
       "etiqueta": "Fuego / crepitar",
-      "sfxId": "fire-01",
+      "sfxId": "fuego-crepitante",
       "activo": true,
       "palabras": [
         "fuego",
@@ -326,7 +326,7 @@
     {
       "categoria": "explosion",
       "etiqueta": "Explosión / estallido",
-      "sfxId": "explosion-01",
+      "sfxId": "explosion",
       "activo": true,
       "palabras": [
         "explosion",
@@ -345,7 +345,7 @@
     {
       "categoria": "latido",
       "etiqueta": "Latido del corazón",
-      "sfxId": "heartbeat-01",
+      "sfxId": "latido-del-corazon",
       "activo": true,
       "palabras": [
         "corazon",
@@ -362,7 +362,7 @@
     {
       "categoria": "campana",
       "etiqueta": "Campana",
-      "sfxId": "bell-01",
+      "sfxId": "campana",
       "activo": true,
       "palabras": [
         "campana",
@@ -380,7 +380,7 @@
     {
       "categoria": "campanada",
       "etiqueta": "Campanada grave",
-      "sfxId": "bell-toll-01",
+      "sfxId": "campana-grave",
       "activo": true,
       "palabras": [
         "campanada",
@@ -396,7 +396,7 @@
     {
       "categoria": "cristal",
       "etiqueta": "Cristal rompiéndose",
-      "sfxId": "glass-break-01",
+      "sfxId": "cristal-rompiendose",
       "activo": true,
       "palabras": [
         "cristal",
@@ -417,7 +417,7 @@
     {
       "categoria": "whoosh",
       "etiqueta": "Whoosh / aire al pasar",
-      "sfxId": "whoosh-01",
+      "sfxId": "whoosh",
       "activo": true,
       "palabras": [
         "whoosh",
@@ -432,7 +432,7 @@
     {
       "categoria": "risa",
       "etiqueta": "Risa",
-      "sfxId": "laugh-01",
+      "sfxId": "risa",
       "activo": true,
       "palabras": [
         "risa",
@@ -453,7 +453,7 @@
     {
       "categoria": "grito",
       "etiqueta": "Grito / chillido",
-      "sfxId": "scream-01",
+      "sfxId": "grito",
       "activo": true,
       "palabras": [
         "grito",
@@ -474,7 +474,7 @@
     {
       "categoria": "jadeo",
       "etiqueta": "Jadeo / respiración",
-      "sfxId": "gasp-01",
+      "sfxId": "jadeo",
       "activo": true,
       "palabras": [
         "jadeo",
@@ -496,7 +496,7 @@
     {
       "categoria": "caballo",
       "etiqueta": "Galope de caballo",
-      "sfxId": "horse-gallop-01",
+      "sfxId": "galope-de-caballo",
       "activo": true,
       "palabras": [
         "caballo",
@@ -516,7 +516,7 @@
     {
       "categoria": "monstruo",
       "etiqueta": "Monstruo / bestia",
-      "sfxId": "monster-growl-01",
+      "sfxId": "grunido-de-monstruo",
       "activo": true,
       "palabras": [
         "monstruo",
@@ -535,7 +535,7 @@
     {
       "categoria": "eco",
       "etiqueta": "Eco de caverna",
-      "sfxId": "echo-ping-01",
+      "sfxId": "eco-de-caverna",
       "activo": true,
       "palabras": [
         "eco",
@@ -553,7 +553,7 @@
     {
       "categoria": "magia",
       "etiqueta": "Magia / chispas",
-      "sfxId": "magic-sparkle-01",
+      "sfxId": "destello-magico",
       "activo": true,
       "palabras": [
         "magia",
@@ -579,7 +579,7 @@
     {
       "categoria": "cuerno",
       "etiqueta": "Cuerno / trompeta",
-      "sfxId": "horn-01",
+      "sfxId": "cuerno",
       "activo": true,
       "palabras": [
         "cuerno",
@@ -597,7 +597,7 @@
     {
       "categoria": "tambores",
       "etiqueta": "Tambores de guerra",
-      "sfxId": "war-drums-01",
+      "sfxId": "tambores-de-guerra",
       "activo": true,
       "palabras": [
         "tambor",
@@ -615,7 +615,7 @@
     {
       "categoria": "crujido",
       "etiqueta": "Crujido seco",
-      "sfxId": "snap-01",
+      "sfxId": "crujido-seco",
       "activo": true,
       "palabras": [
         "cruje",
@@ -635,7 +635,7 @@
     {
       "categoria": "piedra",
       "etiqueta": "Piedra moliendo",
-      "sfxId": "stone-grind-01",
+      "sfxId": "piedra-moliendo",
       "activo": true,
       "palabras": [
         "piedra",
@@ -657,7 +657,7 @@
     {
       "categoria": "hojas",
       "etiqueta": "Hojas secas",
-      "sfxId": "leaves-01",
+      "sfxId": "hojas-secas",
       "activo": true,
       "palabras": [
         "hoja",

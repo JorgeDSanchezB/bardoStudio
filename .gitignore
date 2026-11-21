@@ -51,12 +51,14 @@ prompt
 
 server.log
 # Skills directory
-/skills
+/skills/
 .bardo-ia.json
 
-# Instaladores de escritorio (NO se respaldan en git — 151 MB, excede límite de GitHub)
+# Instaladores de escritorio (NO se respaldan en git — 151 MB, excede el límite de GitHub)
 *.exe
 public/*.exe
+/BardoStudio-Setup-*.exe
+/bardoStudioCompleto.tar
 desktop/dist/
 desktop/release/
 desktop/build/
@@ -70,3 +72,8 @@ tool-results/
 
 # Sistema
 Thumbs.db
+
+# Material fuente en MP3 del usuario: los WAV resultantes SÍ se versionan
+# (public/sfx, public/demo/musica); estos originales viven solo en local
+/Efectos de sonido/
+/Gestion de musica/
